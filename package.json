@@ -1,0 +1,20 @@
+{
+  "name": "s3uploader",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "aws-sdk": "^2.829.0",
+    "directory-tree": "^2.2.5",
+    "dotenv": "^8.2.0",
+    "lodash": "^4.17.20",
+    "path": "^0.12.7",
+    "promise-deferred": "^2.0.3"
+  }
+}
