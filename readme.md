@@ -77,6 +77,12 @@ https://docs.aws.amazon.com/sdk-for-javascript/v2/developer-guide/s3-example-cre
 
 
 
+# Compile to a single file
+
+As per https://github.com/vercel/ncc
+
+npm i -g @vercel/ncc
+ncc build s3uploader.js -o dist
 
 Possible Todo
 --------------

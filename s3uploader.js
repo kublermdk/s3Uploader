@@ -5,8 +5,10 @@ const fsPromises = fs.promises;
 const path = require('path');
 const dirTree = require("directory-tree");
 const DeferredPromise = require('./DeferredPromise.js');
+const ProcessingQueue = require('./ProcessingQueue.js');
+const QueueConsumer = require('./QueueConsumer.js');
 const _ = require('lodash');
-
+let processingQueueSettings = {consumerCount: 2, consumerClass: QueueConsumer};
 
 let uploadedFiles = [];
 let status = {}; // For a web server response
@@ -81,6 +83,9 @@ let checkAwsCredentialsPromise = new DeferredPromise();
 let checkAwsBucketPromise = new DeferredPromise();
 let startupCompletedPromise = new DeferredPromise();
 
+// For later
+let processingQueue = new ProcessingQueue(processingQueueSettings);
+
 
 // --------------------------------
 //   Local Folder check
@@ -147,6 +152,9 @@ if (!checkAwsBucketAtStartup) {
 }
 
 
+// =============================================
+//   Check initialisation
+// =============================================
 Promise.all([canAccessLocalFolderPromise, checkAwsCredentialsPromise, checkAwsBucketPromise]).then((values) => {
 
     let isTrue = '✓ true';
@@ -165,6 +173,70 @@ Promise.all([canAccessLocalFolderPromise, checkAwsCredentialsPromise, checkAwsBu
     console.error("Unable to start ", err);
     process.exit(2);
 });
+
+
+// =============================================
+//   F U N C T I O N S
+// =============================================
+
+const filterOutRecursiveDirectoriesIfNeeded = function (filteredTree) {
+
+    if (recurseFolder === false && filteredTree && filteredTree.children && filteredTree.children.length > 0) {
+
+        filteredTree.children = _.filter(filteredTree.children, treeEntry => {
+            return treeEntry.type !== 'directory';
+        });
+    }
+
+    if (!Array.isArray(filteredTree)) {
+        filteredTree = [filteredTree];
+    }
+    return filteredTree;
+}
+
+const treeOutput = function (filteredTree, indents = '') {
+    let output = '';
+
+    _.each(filteredTree, treeEntry => {
+        // console.debug(treeEntry);
+        output += indents + (treeEntry.type === 'file' ? treeEntry.name : `[ ${treeEntry.name} ]`) + ' ' + fileSizeReadable(treeEntry.size) + "\n"
+        if (treeEntry.type === 'directory' && _.get(treeEntry, 'children.length') > 0) {
+            output += treeOutput(treeEntry.children, `${indents} - `); // Recursive call
+        }
+    });
+    return output;
+}
+
+const fileSizeReadable = function (sizeBytes) {
+    let decimals = (Math.round((sizeBytes / 1048576) * 100) / 100).toFixed(2);
+    if (decimals.toString().length > 3) {
+        decimals = decimals.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")
+    }
+    return decimals + "MB";
+
+}
+
+
+//
+const addUploadFilesToQueue = async (processingQueue, filteredTree, basePath = localFolder) => {
+    if (!filteredTree) {
+        console.debug("No files to upload");
+        return null;
+    }
+
+    _.each(filteredTree, treeEntry => {
+        if (treeEntry.type === 'file') {
+            // console.debug("Sending file to be uploaded", {treeEntry, basePath});
+            treeEntry.basePath = basePath;
+            processingQueue.addToQueue(treeEntry);
+        }
+        if (_.get(treeEntry, 'children.length') > 0) {
+            addUploadFilesToQueue(processingQueue, treeEntry.children, basePath);
+        }
+    });
+
+    return uploadedFiles;
+};
 
 
 // --------------------------------
@@ -189,6 +261,10 @@ if (localExclude) {
 
 console.debug('dirTreeOptions: ', dirTreeOptions);
 
+
+// =============================================
+//   Add Initial Files to Queue
+// =============================================
 startupCompletedPromise.then((values) => {
     console.debug("--------------------------\n  Startup Completed\n--------------------------\n", values);
     console.debug(localFolder);
@@ -238,141 +314,37 @@ startupCompletedPromise.then((values) => {
         return null;
     }
 
+    // ====================================
+    //   Add Files to Processing Queue
+    // ====================================
+
+    // @todo: Check if the file exists before trying to upload it
+    // @todo: Default upload type (e.g x-amz-storage-class able to be set to DEEP_ARCHIVE)
+    // @todo: MIME_TYPES
+    // @todo: IGNORE_SELF
+    // @todo: Have a local webserver
+    // @todo: Regular checking
+
+    // @todo: Add files to a processing queue, can have multiple uploaders running at once
+    // @todo: Add a single filesystem checker - Can scan regularly or add a filewatch
+    // @todo: Work out how to NOT upload a file until it's been fully uploaded by Rsync (even if it gets only partly uploaded)
+
     let basePath = _.get(filteredTree, '0.path');
-    return await uploadFiles(filteredTree, basePath);
+    await addUploadFilesToQueue(processingQueue, filteredTree, basePath);
+    processingQueue.start();
+    console.log('processingQueue ', {
+        status: processingQueue.getStatus(),
+        queueCount: processingQueue.getQueueCount(),
+        consumerCount: processingQueue.getConsumerCount(),
+        activity: processingQueue.activity
+    });
+
 
 }).then(uploadedFiles => {
     console.log("Completed uploading: ", uploadedFiles);
 }).catch(err => {
     console.err("Error when uploading files: ", err);
 });
-
-
-// --- Functions ---
-// These are defined here OK because they are used in promises after the rest of the file has been read
-
-const filterOutRecursiveDirectoriesIfNeeded = function (filteredTree) {
-
-    if (recurseFolder === false && filteredTree && filteredTree.children && filteredTree.children.length > 0) {
-
-        filteredTree.children = _.filter(filteredTree.children, treeEntry => {
-            return treeEntry.type !== 'directory';
-        });
-    }
-
-    if (!Array.isArray(filteredTree)) {
-        filteredTree = [filteredTree];
-    }
-    return filteredTree;
-}
-
-const treeOutput = function (filteredTree, indents = '') {
-    let output = '';
-
-    _.each(filteredTree, treeEntry => {
-        // console.debug(treeEntry);
-        output += indents + (treeEntry.type === 'file' ? treeEntry.name : `[ ${treeEntry.name} ]`) + ' ' + fileSizeReadable(treeEntry.size) + "\n"
-        if (treeEntry.type === 'directory' && _.get(treeEntry, 'children.length') > 0) {
-            output += treeOutput(treeEntry.children, `${indents} - `); // Recursive call
-        }
-    });
-    return output;
-}
-
-const fileSizeReadable = function (sizeBytes) {
-    let decimals = (Math.round((sizeBytes / 1048576) * 100) / 100).toFixed(2);
-    if (decimals.toString().length > 3) {
-        decimals = decimals.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")
-    }
-    return decimals + "MB";
-
-}
-
-
-const uploadFiles = async (filteredTree, basePath = localFolder) => {
-    if (!filteredTree) {
-        console.debug("No files to upload");
-        return null;
-    }
-    await _.each(filteredTree, async treeEntry => {
-        if (treeEntry.type === 'file') {
-            // console.debug("Sending file to be uploaded", {treeEntry, basePath});
-            uploadedFiles.push(await uploadFile(treeEntry, basePath));
-        }
-        if (_.get(treeEntry, 'children.length') > 0) {
-            await uploadFiles(treeEntry.children, basePath);
-        }
-    });
-
-    return uploadedFiles;
-};
-
-const uploadFile = async (treeEntry, basePath) => {
-
-// Expects the AWS object is created
-
-    // console.log("Uploading file to S3: ", {treeEntry, basePath});
-
-    let uploadLocationKey = s3BucketFolder + treeEntry.path.replace(basePath, ''); // @todo: remove basePath from treeEntry
-
-    // @todo: Ensure the file doesn't already exist
-    let uploadParams = {Bucket: s3BucketName, Key: uploadLocationKey, Body: ''};
-    let localFilePath = path.join(treeEntry.path); // Convert to a local filepath that fs can read
-    console.debug("Uploading file to S3: ", {
-        uploadParams,
-        uploadLocationKey,
-        basePath,
-        s3BucketFolder,
-        treeEntry,
-        filePath: localFilePath
-    });
-
-    // return uploadLocationKey;
-
-    status = {checkingIfFileExists: true, uploadLocationKey};
-    // @todo: Check if the file exists before trying to upload it again
-    // @todo: Check if the file exists before trying to upload it again
-    // @todo: Check if the file exists before trying to upload it again
-    // @todo: Check if the file exists before trying to upload it again
-    //await s3.
-    // Check OVERWRITE_EXISTING_IF_DIFFERENT
-
-    status = {uploading: true, uploadLocationKey};
-    let fileStream = fs.createReadStream(localFilePath); // A test pixel that's only 43bytes in size
-    fileStream.on('error', function (err) {
-        console.log('File Error', err);
-        return err;
-    });
-    console.debug("Uploading the file: ", {filePath: localFilePath, awsRegion: process.env.AWS_REGION, uploadParams});
-    uploadParams.Body = fileStream;
-    await s3.upload(uploadParams, function (err, data) {
-        if (err) {
-            console.log("S3 Upload Error", err);
-            return err;
-        } else if (data) {
-            console.log("S3 Upload Success", data.Location);
-            return data;
-            /* e.g data:  {
-              ETag: '"958c6ad2c1183fee0bf0dd489f4204c7"',
-              Location: 'https://bucket-location.s3.us-east-2.amazonaws.com/files/v1-0005.mp4',
-              key: 'files/v1-0005.mp4',
-              Key: 'files/v1-0005.mp4',
-              Bucket: 'bucket-location'
-            }
-            */
-        }
-    });
-}
-
-// @todo: MIME_TYPES
-// @todo: IGNORE_SELF
-// @todo: Have a local webserver
-// @todo: Regular checking
-
-
-// =============================
-//   Actually upload files
-// =============================
 
 
 // ==== For running a webserver
