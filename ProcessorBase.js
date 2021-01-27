@@ -14,6 +14,7 @@ class QueueAndConsumerBase {
     errors = []; // A log of any errors
 
     settings = {
+        ident: Math.random() * 1000, // Probably best replaced with the array index number
         activityLength: 100
     };
     startedAt;
@@ -24,7 +25,7 @@ class QueueAndConsumerBase {
     }
 
     setStatus(status) {
-        this.activity.push({message: `Setting the status from '${this.status}' to '${status}'`});
+        this.addActivity(`Setting the status from '${this.status}' to '${status}'`);
         this.status = status;
 
         if (this.activity.length > this.settings.activityLength + 5) {
@@ -44,8 +45,9 @@ class QueueAndConsumerBase {
     }
 
     addActivity(activityMessage) {
-        this.activity.push({message: activityMessage});
+        this.activity.push({message: activityMessage, date: new Date()});
     }
+
 
     statuses = {
         'init': 'init', // Initialising
@@ -60,7 +62,6 @@ class QueueAndConsumerBase {
         'stopping': 'stopping', // As it says, stopping the queue, finishing the consumers, not allowing any new queue entries and running end of processing hooks
         'stopped': 'stopped', // No more queue or processing. Can't be resumed. Usually there's an exit of the app on this state
         'errored': 'errored', // Errored obviously means something bad happened, it's likely the whole script should stop
-
     }
 
     getStatus() {
@@ -68,9 +69,14 @@ class QueueAndConsumerBase {
     }
 
     getActivity() {
-        return this.activity;
+        let activities = [];
+        _.each(this.activity, activityEntry => {
+            // console.log(activity);
+            // e.g { message: "Setting the status from 'init' to 'starting'", date: 2021-01-27T19:19:54.496Z }
+            activities.push(activityEntry.date.toISOString() + ' ' + activityEntry.message);
+        });
+        return activities && activities.join(`\n`);
     }
-
 
 }
 

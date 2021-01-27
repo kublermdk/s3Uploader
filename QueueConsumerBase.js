@@ -11,6 +11,7 @@ class QueueConsumerBase extends QueueAndConsumerBase {
     processingStarted;
 
     info = {}; // Custom Environment info provided when the queue was created
+    queueEntriesProcessed = 0;
 
     // statuses = {
     //     'init': 'init', // Initialising
@@ -39,13 +40,28 @@ class QueueConsumerBase extends QueueAndConsumerBase {
         return await this.run();
     }
 
+    getStatistics(verbose = false) {
+        let stats = {
+            status: this.getStatus(),
+            isActive: this.isActive,
+            started: this.started,
+            queueEntriesProcessed: this.queueEntriesProcessed,
+            errors: this.errors,
+        }
+        if (verbose) {
+            stats.startedAt = this.startedAt;
+            stats.activity = this.getActivity();
+        }
+        return stats;
+    }
+
     run = async () => {
 
         this.isActive = true;
         let queueEntry = this.processingQueue.getQueueEntry();
         if (null === queueEntry) {
             this.setStatus(this.statuses.idle);
-            console.log("No more queue entries, will wait for more");
+            this.addActivity("No more queue entries, will wait for more");
             this.isActive = false;
             return null;
         }
@@ -57,18 +73,18 @@ class QueueConsumerBase extends QueueAndConsumerBase {
         }); // Run the actual main part
 
         this.setStatus(this.statuses.processed);
-        console.log("Processed queueEntry ", queueEntry, " in ", new Date().getTime() - this.processingStarted.getTime() + ' ms at', new Date());
+        this.queueEntriesProcessed++;
+        this.addActivity(`Processed queueEntry #${this.queueEntriesProcessed} in ` + (new Date().getTime() - this.processingStarted.getTime()) + ' ms');
 
         // -- Run it again and check if there's another entry
         setTimeout(() => {
             this.run();
-        }, 50);
+        }, 5);
         return processedQueueResponse;
     }
 
     processQueueEntry = async (entry) => {
-        // return entry;
-        // A very basic example which waits 1s then returns
+        // A very basic example which waits a bit before returning
         return new Promise((resolve, reject) => {
             setTimeout(() => {
                 entry.processed = true;

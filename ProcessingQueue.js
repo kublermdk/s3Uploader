@@ -47,6 +47,7 @@ const QueueAndConsumerBase = require('./ProcessorBase.js');
 class ProcessingQueue extends QueueAndConsumerBase {
     queue = []; //
     consumers = [];
+    consumersCreated = 0; // Used for idents even if you add/remove consumers
 
 
     // statuses = {
@@ -79,7 +80,7 @@ class ProcessingQueue extends QueueAndConsumerBase {
 
         // -- Create the Consumers
         _.each(_.range(0, this.options.consumerCount), index => {
-            this.addConsumer();
+            this.addConsumer(index);
         });
     };
 
@@ -122,13 +123,13 @@ class ProcessingQueue extends QueueAndConsumerBase {
 
         return new Promise((resolve, reject) => {
 
-            // Initial run
+            // -- Initial run
             if (this.isDrained() === true) {
                 resolve(true);
             }
 
 
-            // Keep checking
+            // -- Keep checking
             interval = setInterval(() => {
                 if (this.isDrained() === true) {
                     clearInterval(interval);
@@ -143,7 +144,6 @@ class ProcessingQueue extends QueueAndConsumerBase {
         if (!this.started) {
             return false;
         }
-        console.debug("this.queue.length === 0 ", this.queue.length === 0, " this.findBusyConsumer() is: ", _.get(this.findBusyConsumer(), 'isActive'));
         return this.queue.length === 0 && this.findBusyConsumer() === undefined;
     }
 
@@ -160,8 +160,14 @@ class ProcessingQueue extends QueueAndConsumerBase {
     }
 
     addConsumer() {
-        this.consumers.push(new this.options.consumerClass(this, this.options.consumerInfo, this.settings));
-        this.addActivity(`Added another consumer ${this.options.consumerCount}`);
+
+        this.consumersCreated++;
+        let ident = 'consumer-' + this.consumersCreated;
+        this.consumers.push(new this.options.consumerClass(
+            this,
+            this.options.consumerInfo,
+            _.merge({}, this.settings, {ident: ident})));
+        this.addActivity(`Added consumer ${ident} of ${this.options.consumerCount}`);
     }
 
     /**
@@ -186,6 +192,11 @@ class ProcessingQueue extends QueueAndConsumerBase {
         }
         if (verbose) {
             stats.activity = this.getActivity();
+            stats.consumers = [];
+            _.each(this.consumers, consumer => {
+                    stats.consumers.push(consumer.getStatistics(true));
+                }
+            )
         }
         return stats;
     }
