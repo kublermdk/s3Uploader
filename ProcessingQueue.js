@@ -36,6 +36,13 @@ const QueueAndConsumerBase = require('./ProcessorBase.js');
  *
  * Note that there's a watcher or if not available a polling system that checks to see if there's any newly modified files for being uploaded and adds them to the queue.
  * The file processing will check to see if the file exists on S3 and has the same size and SHA512 hash.
+ *
+ *
+ * Some Async queue references (that I read after implimenting this):
+ * https://glot.io/snippets/ete2axnjzo
+ * https://krasimirtsonev.com/blog/article/implementing-an-async-queue-in-23-lines-of-code
+ *
+ * Maybe I should've just used https://caolan.github.io/async/v3/index.html
  */
 class ProcessingQueue extends QueueAndConsumerBase {
     queue = []; //
@@ -104,19 +111,27 @@ class ProcessingQueue extends QueueAndConsumerBase {
         }
     }
 
-    async drained() {
+    /**
+     * Let us know when the queue is fully drained
+     * Note that this isn't perfectly in tune with responses from the consumers, it's a very basic polling, but works well enough (within 200ms)
+     *
+     * @returns {Promise<unknown>}
+     */
+    drained() {
         let interval = null;
 
         return new Promise((resolve, reject) => {
 
             // Initial run
-            if (this.isDrained()) {
+            if (this.isDrained() === true) {
                 resolve(true);
             }
 
+
             // Keep checking
             interval = setInterval(() => {
-                if (this.isDrained()) {
+                if (this.isDrained() === true) {
+                    clearInterval(interval);
                     resolve(true);
                 }
             }, 200);
@@ -125,18 +140,22 @@ class ProcessingQueue extends QueueAndConsumerBase {
     }
 
     isDrained() {
-        return this.queue.length === 0 && !this.findBusyConsumer();
+        if (!this.started) {
+            return false;
+        }
+        console.debug("this.queue.length === 0 ", this.queue.length === 0, " this.findBusyConsumer() is: ", _.get(this.findBusyConsumer(), 'isActive'));
+        return this.queue.length === 0 && this.findBusyConsumer() === undefined;
     }
 
     findBusyConsumer() {
         return _.find(this.consumers, consumer => {
-            return consumer.isActive && consumer.started;
+            return consumer.isActive === true && consumer.started === true;
         });
     }
 
     findWaitingConsumer() {
         return _.find(this.consumers, consumer => {
-            return !consumer.isActive && consumer.started;
+            return consumer.isActive === false && consumer.started === true;
         });
     }
 
@@ -154,7 +173,7 @@ class ProcessingQueue extends QueueAndConsumerBase {
         if (this.queue.length === 0) {
             return null;
         }
-        return this.queue.pop();
+        return this.queue.shift();
     }
 
 
@@ -180,7 +199,7 @@ class ProcessingQueue extends QueueAndConsumerBase {
     }
 
     /**
-     * This should really not be used much
+     * Maybe you need this if you are wanting to know the contents of the queue?
      * @returns {[]}
      */
     getQueue() {

@@ -8,6 +8,7 @@ const QueueAndConsumerBase = require('./ProcessorBase.js');
 class QueueConsumerBase extends QueueAndConsumerBase {
     status = 'init';
     processingQueue;
+    processingStarted;
 
     info = {}; // Custom Environment info provided when the queue was created
 
@@ -32,15 +33,13 @@ class QueueConsumerBase extends QueueAndConsumerBase {
     };
 
     start = async () => {
-        if (this.status === this.statuses.init) {
-            this.setStatus(this.statuses.starting);
+        if ([this.statuses.init, this.statuses.starting].includes(this.status)) {
+            this.setStatus(this.statuses.started);
         }
         return await this.run();
     }
 
     run = async () => {
-
-        // return null;
 
         this.isActive = true;
         let queueEntry = this.processingQueue.getQueueEntry();
@@ -51,26 +50,31 @@ class QueueConsumerBase extends QueueAndConsumerBase {
             return null;
         }
 
-        console.log("Processing queueEntry", queueEntry);
+        this.processingStarted = new Date();
+        // console.log("Processing queueEntry", queueEntry);
         let processedQueueResponse = await this.processQueueEntry(queueEntry).catch(err => {
             this.addError(err);
         }); // Run the actual main part
 
         this.setStatus(this.statuses.processed);
-        // console.log("Processed queueEntry ", processedQueueResponse);
+        console.log("Processed queueEntry ", queueEntry, " in ", new Date().getTime() - this.processingStarted.getTime() + ' ms at', new Date());
+
+        // -- Run it again and check if there's another entry
         setTimeout(() => {
             this.run();
-        }, 200);
+        }, 50);
         return processedQueueResponse;
     }
 
     processQueueEntry = async (entry) => {
-        return entry;
+        // return entry;
         // A very basic example which waits 1s then returns
-        // setTimeout(() => {
-        //     entry.processed = true;
-        //     return entry;
-        // }, 100);
+        return new Promise((resolve, reject) => {
+            setTimeout(() => {
+                entry.processed = true;
+                resolve(entry);
+            }, 500);
+        });
     }
 }
 

@@ -102,19 +102,22 @@ describe('Processing Queue', () => {
         processingQueue.addToQueue({name: "test 1"});
         processingQueue.addToQueue({name: "test 2"});
         processingQueue.addToQueue({name: "test 3"});
-        processingQueue.start();
-        // expect(processingQueue.getStatistics()).toEqual({
-        //     "consumerCount": 2,
-        //     "queueCount": 0,
-        //     "status": "started",
-        // });
+        processingQueue.addToQueue({name: "test 4"});
+        processingQueue.addToQueue({name: "test 5"});
 
-        await processingQueue.drained().then(hasDrained => {
-            expect(hasDrained).toBeTruthy();
-            expect(hasDrained).toEqual(true);
-            console.log("Drained");
+        let dateStarted = new Date();
+        processingQueue.start();
+        expect.assertions(3);
+        expect(processingQueue.getStatistics()).toEqual({
+            "consumerCount": 1,
+            "queueCount": 4,
+            "status": "started",
         });
 
+        let hasDrained = await processingQueue.drained();
+        expect(hasDrained).toBeTruthy();
+        expect(hasDrained).toEqual(true);
+        console.log("Drained in ", new Date().getTime() - dateStarted.getTime() + ' ms');
 
     });
 

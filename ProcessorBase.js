@@ -16,6 +16,8 @@ class QueueAndConsumerBase {
     settings = {
         activityLength: 100
     };
+    startedAt;
+
 
     constructor(settings) {
         this.settings = _.merge(this.settings, settings); // Add in any custom configuration settings
@@ -27,6 +29,11 @@ class QueueAndConsumerBase {
 
         if (this.activity.length > this.settings.activityLength + 5) {
             this.activity = this.activity.slice(0, this.settings.activityLength);
+        }
+
+        if (status === this.statuses.started) {
+            this.started = true;
+            this.startedAt = new Date();
         }
     }
 

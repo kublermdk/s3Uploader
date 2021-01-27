@@ -16,6 +16,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "async": "^3.2.0",
     "aws-sdk": "^2.829.0",
     "directory-tree": "^2.2.5",
     "dotenv": "^8.2.0",
