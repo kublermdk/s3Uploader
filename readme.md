@@ -79,10 +79,20 @@ https://docs.aws.amazon.com/sdk-for-javascript/v2/developer-guide/s3-example-cre
 
 # Compile to a single file
 
-As per https://github.com/vercel/ncc
+As per https://dev.to/jochemstoel/bundle-your-node-app-to-a-single-executable-for-windows-linux-and-osx-2c89
 
-npm i -g @vercel/ncc
-ncc build s3uploader.js -o dist
+The following should install pkg and run it, giving you 3 executable files, one for each of Windows, Mac and Linux
+This hasn't been tested well.
+
+    npm i pkg -g
+    pkg .
+
+
+# Testing
+
+    npm install jest --global
+    npm run test
+
 
 Possible Todo
 --------------

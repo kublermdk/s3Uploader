@@ -2,7 +2,7 @@ const _ = require('lodash');
 
 /**
  *
- * The queue class should:
+ * The queue processor class should:
  * Obviously contain a queue.
  * Contain the queue consumers
  *
@@ -10,7 +10,7 @@ const _ = require('lodash');
  * If the queue is empty then adding to the queue should automatically send an entry to a waiting consumer
  * This means we need to be able to ask the consumer the state - Is it processing, idle or errored?
  *
- * You should be able to specify how many consumers are to be created
+ * You should be able to specify how many consumers are to beb created
  * You should be able to specify the consumer factory class
  *
  * You should be able to send a signal to the script and
@@ -36,11 +36,24 @@ const _ = require('lodash');
  * Note that there's a watcher or if not available a polling system that checks to see if there's any newly modified files for being uploaded and adds them to the queue.
  * The file processing will check to see if the file exists on S3 and has the same size and SHA512 hash.
  */
-class ProcessingQueue {
-    queue = []; //
-    consumers = [];
-    status = 'init'; // Valid statuses include:
+class QueueConsumerBase {
+    status = 'init';
+    processingQueue;
+    info = {}; // Custom Environment info provided when the queue was created
+    settings = {
+        activityLength: 100
+    };
+    activity = []; // An array of information about what the consumer has been doing.
 
+
+    setStatus(status) {
+        this.activity.push({message: `Setting the status from '${this.status}' to '${status}'`});
+        this.status = status;
+    }
+
+    addActivity(activityMessage) {
+        this.activity.push({message: activityMessage});
+    }
 
     statuses = {
         'init': 'init', // Initialising
@@ -52,97 +65,30 @@ class ProcessingQueue {
         'stopping': 'stopping', // As it says, stopping the queue, finishing the consumers, not allowing any new queue entries and running end of processing hooks
         'stopped': 'stopped', // No more queue or processing. Can't be resumed. Usually there's an exit of the app on this state
         'errored': 'errored', // Errored obviously means something bad happened, it's likely the whole script should stop
+
     }
 
-    activity = []; // An array of status entries and any other details
-
-    options = {
-        consumerCount: 2,
-        consumerClass: null, // Required
-        consumerInfo: {},
-    }
-
-    constructor(options = {}) {
-        this.options = _.merge(this.options, options);
-
-        if (null === this.options.consumerClass) {
-            this.setStatus(this.statuses.errored);
-            throw new Error("Expecting a valid consumer class, none provided");
-        }
+    constructor(processingQueue, consumerInfo = {}, settings = {}) {
+        this.processingQueue = processingQueue;
+        this.info = consumerInfo;
+        this.settings = _.merge(this.settings, settings); // Add in any custom configuration settings
     };
 
-    setStatus(status) {
-        this.activity.push({message: `Setting the status from '${this.status}' to '${status}'`});
-        this.status = status;
-    }
-
-    addActivity(activityMessage) {
-        this.activity.push({message: activityMessage});
-    }
-
-    start() {
-        this.setStatus(this.statuses.starting);
-
-        // -- Create the Consumers
-        _.each(_.range(0, this.options.consumerCount), index => {
-            this.consumers.push(new this.options.consumerClass(this, this.options.consumerInfo));
-            this.addActivity(`Added consumer #${index} of ${this.options.consumerCount}`);
-        });
+    addToQueue() {
 
     }
 
-    /**
-     * The way to add new entries
-     * @param queueEntry
-     */
-    addToQueue(queueEntry) {
-        this.queue.push(queueEntry);
+    run() {
 
-        // @todo: Message the consumers, depending on the state
-        if (this.status === this.statuses.processing) {
-
-        }
     }
 
-    getStatus() {
-        return this.status;
+    processQueueEntry = async (entry) => {
+        // A very basic example which waits 1s then returns
+        setTimeout(1000, () => {
+            return entry;
+        }, 1000);
     }
-
-    getStatistics(verbose = false) {
-
-        let stats = {
-            status: this.getStatus(),
-            queueCount: this.getQueueCount(),
-            consumerCount: this.getConsumerCount(),
-        }
-        if (verbose) {
-            stats.activity = this.getActivity();
-        }
-        return stats;
-    }
-
-    getActivity() {
-        return this.activity;
-    }
-
-    getQueueCount() {
-        return this.queue.length;
-    }
-
-    getConsumerCount() {
-        return this.consumers.length;
-    }
-
-    /**
-     * This should really not be used much
-     * @returns {[]}
-     */
-    getQueue() {
-        return this.queue;
-    }
-
-
 }
 
 
-module.exports = ProcessingQueue;
+module.exports = QueueConsumerBase;

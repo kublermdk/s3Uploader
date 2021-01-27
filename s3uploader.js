@@ -21,6 +21,11 @@ console.log("Starting up s3 Uploader");
 
 const args = process.argv.slice(2);
 
+// FYI https://www.npmjs.com/package/pkg says that:
+// >> in order to access real file system at run time (pick up a user's external javascript plugin, json configuration or even get a list of user's directory) you should take process.cwd() or path.dirname(process.execPath).
+// path.dirname(process.execPath)
+
+
 let localFolder = args[0] || process.env.LOCAL_FOLDER || __dirname;
 localFolder = path.resolve(localFolder);
 const s3BucketName = process.env.AWS_S3_BUCKET;
