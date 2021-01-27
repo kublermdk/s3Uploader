@@ -1,4 +1,5 @@
 const _ = require('lodash');
+const QueueAndConsumerBase = require('./ProcessorBase.js');
 
 /**
  *
@@ -36,25 +37,23 @@ const _ = require('lodash');
  * Note that there's a watcher or if not available a polling system that checks to see if there's any newly modified files for being uploaded and adds them to the queue.
  * The file processing will check to see if the file exists on S3 and has the same size and SHA512 hash.
  */
-class ProcessingQueue {
+class ProcessingQueue extends QueueAndConsumerBase {
     queue = []; //
     consumers = [];
-    status = 'init'; // Valid statuses include:
 
 
-    statuses = {
-        'init': 'init', // Initialising
-        'starting': 'starting', // Creating the consumers and will start consuming the queue if there's any entries
-        'processing': 'processing', // The main state, it's actually working
-        'pausing': 'pausing', // Stopping the consumers, they won't grab any new queue items
-        'paused': 'paused', // All consumers have stopped
-        'playing': 'playing', // Similar to starting, but re-enabling the processing after being in a paused state, should quickly transition to processing
-        'stopping': 'stopping', // As it says, stopping the queue, finishing the consumers, not allowing any new queue entries and running end of processing hooks
-        'stopped': 'stopped', // No more queue or processing. Can't be resumed. Usually there's an exit of the app on this state
-        'errored': 'errored', // Errored obviously means something bad happened, it's likely the whole script should stop
-    }
+    // statuses = {
+    //     'init': 'init', // Initialising
+    //     'starting': 'starting', // Creating the consumers and will start consuming the queue if there's any entries
+    //     'processing': 'processing', // The main state, it's actually working
+    //     'pausing': 'pausing', // Stopping the consumers, they won't grab any new queue items
+    //     'paused': 'paused', // All consumers have stopped
+    //     'playing': 'playing', // Similar to starting, but re-enabling the processing after being in a paused state, should quickly transition to processing
+    //     'stopping': 'stopping', // As it says, stopping the queue, finishing the consumers, not allowing any new queue entries and running end of processing hooks
+    //     'stopped': 'stopped', // No more queue or processing. Can't be resumed. Usually there's an exit of the app on this state
+    //     'errored': 'errored', // Errored obviously means something bad happened, it's likely the whole script should stop
+    // }
 
-    activity = []; // An array of status entries and any other details
 
     options = {
         consumerCount: 2,
@@ -62,7 +61,8 @@ class ProcessingQueue {
         consumerInfo: {},
     }
 
-    constructor(options = {}) {
+    constructor(options = {}, settings = {}) {
+        super(settings);
         this.options = _.merge(this.options, options);
 
         if (null === this.options.consumerClass) {
@@ -71,21 +71,12 @@ class ProcessingQueue {
         }
     };
 
-    setStatus(status) {
-        this.activity.push({message: `Setting the status from '${this.status}' to '${status}'`});
-        this.status = status;
-    }
-
-    addActivity(activityMessage) {
-        this.activity.push({message: activityMessage});
-    }
-
-    start() {
+    async start() {
         this.setStatus(this.statuses.starting);
 
         // -- Create the Consumers
         _.each(_.range(0, this.options.consumerCount), index => {
-            this.consumers.push(new this.options.consumerClass(this, this.options.consumerInfo));
+            this.consumers.push(new this.options.consumerClass(this, this.options.consumerInfo, this.settings));
             this.addActivity(`Added consumer #${index} of ${this.options.consumerCount}`);
         });
 
@@ -104,9 +95,15 @@ class ProcessingQueue {
         }
     }
 
-    getStatus() {
-        return this.status;
+    /**
+     * Used by the Queue Consumers
+     *
+     * @returns {*}
+     */
+    getQueueEntry() {
+        return this.queue.pop();
     }
+
 
     getStatistics(verbose = false) {
 
@@ -119,10 +116,6 @@ class ProcessingQueue {
             stats.activity = this.getActivity();
         }
         return stats;
-    }
-
-    getActivity() {
-        return this.activity;
     }
 
     getQueueCount() {

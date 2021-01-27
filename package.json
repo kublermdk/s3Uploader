@@ -9,7 +9,8 @@
   "scripts": {
     "start": "node s3uploader.js",
     "build": "pkg s3uploader.js --out-path=dist",
-    "test": "jest"
+    "test": "jest",
+    "test-watch": "jest --watchAll --notify"
   },
   "keywords": [],
   "author": "",

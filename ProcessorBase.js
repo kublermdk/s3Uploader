@@ -1,0 +1,59 @@
+const _ = require('lodash');
+
+
+/**
+ * A base class for both the Processing Queue and Queue Consumer
+ *
+ * This mostly contains the status and activity details
+ */
+class QueueAndConsumerBase {
+    status = 'init';
+    activity = []; // An array of information about what the consumer has been doing.
+    settings = {
+        activityLength: 100
+    };
+
+    constructor(settings) {
+        this.settings = _.merge(this.settings, settings); // Add in any custom configuration settings
+    }
+
+    setStatus(status) {
+        this.activity.push({message: `Setting the status from '${this.status}' to '${status}'`});
+        this.status = status;
+
+        if (this.activity.length > this.settings.activityLength + 5) {
+            this.activity = this.activity.slice(0, this.settings.activityLength);
+        }
+
+    }
+
+    addActivity(activityMessage) {
+        this.activity.push({message: activityMessage});
+    }
+
+    statuses = {
+        'init': 'init', // Initialising
+        'starting': 'starting', // Creating the consumers and will start consuming the queue if there's any entries
+        'processing': 'processing', // The main state, it's actually working
+        'pausing': 'pausing', // Stopping the consumers, they won't grab any new queue items
+        'paused': 'paused', // All consumers have stopped
+        'playing': 'playing', // Similar to starting, but re-enabling the processing after being in a paused state, should quickly transition to processing
+        'stopping': 'stopping', // As it says, stopping the queue, finishing the consumers, not allowing any new queue entries and running end of processing hooks
+        'stopped': 'stopped', // No more queue or processing. Can't be resumed. Usually there's an exit of the app on this state
+        'errored': 'errored', // Errored obviously means something bad happened, it's likely the whole script should stop
+
+    }
+
+    getStatus() {
+        return this.status;
+    }
+
+    getActivity() {
+        return this.activity;
+    }
+
+
+}
+
+
+module.exports = QueueAndConsumerBase;
