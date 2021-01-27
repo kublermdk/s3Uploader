@@ -117,18 +117,42 @@ describe('Processing Queue', () => {
             "queueCount": expect.any(Number),
             "status": "started",
         });
-        // expect(processingQueue.getStatistics()).toEqual({
-        //     "consumerCount": 1,
-        //     "queueCount": 4,
-        //     "status": "started",
-        // });
 
         let hasDrained = await processingQueue.drained();
         expect(hasDrained).toBeTruthy();
         expect(hasDrained).toEqual(true);
         console.log("Drained in ", new Date().getTime() - dateStarted.getTime() + ' ms');
+        // console.log("Stats: ", processingQueue.getStatistics());
+        // console.log("Consumers: ", processingQueue.getStatistics(true).consumers);
+
+    });
+
+
+    test('runs if queue is added after start', async () => {
+        let processingQueue = new ProcessingQueue(processingQueueSettingsDefault);
+        // let processingQueue = new ProcessingQueue(processingQueueSettingsOne);
+        let dateStarted = new Date();
+        processingQueue.start();
+        processingQueue.addToQueue({name: "test 1"});
+        processingQueue.addToQueue({name: "test 2"});
+        processingQueue.addToQueue({name: "test 3"});
+
+        expect(processingQueue.getStatistics()).toEqual({
+            "consumerCount": expect.any(Number),
+            "queueCount": expect.any(Number),
+            "status": "started",
+        });
+
+        let hasDrained = await processingQueue.drained();
+        expect(hasDrained).toEqual(true);
+        console.log("Drained in ", new Date().getTime() - dateStarted.getTime() + ' ms');
+        processingQueue.addToQueue({name: "test 3"});
+        await processingQueue.drained();
+        console.log("Drained again in total ", new Date().getTime() - dateStarted.getTime() + ' ms');
+
         console.log("Stats: ", processingQueue.getStatistics());
         console.log("Consumers: ", processingQueue.getStatistics(true).consumers);
+
 
 
     });
