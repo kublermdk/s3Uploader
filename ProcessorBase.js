@@ -9,6 +9,10 @@ const _ = require('lodash');
 class QueueAndConsumerBase {
     status = 'init';
     activity = []; // An array of information about what the consumer has been doing.
+    started = false; // When true it has begun wanting to be processing
+    isActive = false; // If true it's actively processing a queue entry. If false it can be farmed out
+    errors = []; // A log of any errors
+
     settings = {
         activityLength: 100
     };
@@ -24,7 +28,12 @@ class QueueAndConsumerBase {
         if (this.activity.length > this.settings.activityLength + 5) {
             this.activity = this.activity.slice(0, this.settings.activityLength);
         }
+    }
 
+    addError(error) {
+        this.errors.push(error);
+        this.setStatus(this.statuses.errored);
+        console.error("An error occurred: ", error);
     }
 
     addActivity(activityMessage) {
@@ -34,7 +43,10 @@ class QueueAndConsumerBase {
     statuses = {
         'init': 'init', // Initialising
         'starting': 'starting', // Creating the consumers and will start consuming the queue if there's any entries
+        'started': 'started', // The consumers have been created but aren't yet processing anything
         'processing': 'processing', // The main state, it's actually working
+        'processed': 'processed', // Just finished processing, will now check if there's another item or if it'll be idle
+        'idle': 'idle', // When there's nothing to process (queue is empty)
         'pausing': 'pausing', // Stopping the consumers, they won't grab any new queue items
         'paused': 'paused', // All consumers have stopped
         'playing': 'playing', // Similar to starting, but re-enabling the processing after being in a paused state, should quickly transition to processing

@@ -69,17 +69,24 @@ class ProcessingQueue extends QueueAndConsumerBase {
             this.setStatus(this.statuses.errored);
             throw new Error("Expecting a valid consumer class, none provided");
         }
-    };
-
-    async start() {
-        this.setStatus(this.statuses.starting);
 
         // -- Create the Consumers
         _.each(_.range(0, this.options.consumerCount), index => {
-            this.consumers.push(new this.options.consumerClass(this, this.options.consumerInfo, this.settings));
-            this.addActivity(`Added consumer #${index} of ${this.options.consumerCount}`);
+            this.addConsumer();
         });
+    };
 
+    /**
+     * Start the consumers actually doing the processing
+     */
+    start() {
+        this.setStatus(this.statuses.starting);
+        _.each(this.consumers, consumer => {
+            consumer.start();
+        });
+        this.setStatus(this.statuses.started);
+        this.started = true;
+        return this.getConsumerCount();
     }
 
     /**
@@ -89,10 +96,53 @@ class ProcessingQueue extends QueueAndConsumerBase {
     addToQueue(queueEntry) {
         this.queue.push(queueEntry);
 
-        // @todo: Message the consumers, depending on the state
-        if (this.status === this.statuses.processing) {
-
+        if (this.started) {
+            let consumer = this.findWaitingConsumer();
+            if (consumer) {
+                consumer.run();
+            }
         }
+    }
+
+    async drained() {
+        let interval = null;
+
+        return new Promise((resolve, reject) => {
+
+            // Initial run
+            if (this.isDrained()) {
+                resolve(true);
+            }
+
+            // Keep checking
+            interval = setInterval(() => {
+                if (this.isDrained()) {
+                    resolve(true);
+                }
+            }, 200);
+
+        });
+    }
+
+    isDrained() {
+        return this.queue.length === 0 && !this.findBusyConsumer();
+    }
+
+    findBusyConsumer() {
+        return _.find(this.consumers, consumer => {
+            return consumer.isActive && consumer.started;
+        });
+    }
+
+    findWaitingConsumer() {
+        return _.find(this.consumers, consumer => {
+            return !consumer.isActive && consumer.started;
+        });
+    }
+
+    addConsumer() {
+        this.consumers.push(new this.options.consumerClass(this, this.options.consumerInfo, this.settings));
+        this.addActivity(`Added another consumer ${this.options.consumerCount}`);
     }
 
     /**
@@ -101,6 +151,9 @@ class ProcessingQueue extends QueueAndConsumerBase {
      * @returns {*}
      */
     getQueueEntry() {
+        if (this.queue.length === 0) {
+            return null;
+        }
         return this.queue.pop();
     }
 
