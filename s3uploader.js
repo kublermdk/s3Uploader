@@ -5,10 +5,10 @@ const fsPromises = fs.promises;
 const path = require('path');
 const dirTree = require("directory-tree");
 const DeferredPromise = require('./DeferredPromise.js');
-const ProcessingQueue = require('./ProcessingQueue.js');
+const QueueManager = require('./QueueManager.js');
 const QueueConsumer = require('./QueueConsumer.js');
 const _ = require('lodash');
-let processingQueueSettings = {consumerCount: 2, consumerClass: QueueConsumer};
+let queueManagerSettings = {consumerCount: 2, consumerClass: QueueConsumer};
 
 let uploadedFiles = [];
 let status = {}; // For a web server response
@@ -89,7 +89,7 @@ let checkAwsBucketPromise = new DeferredPromise();
 let startupCompletedPromise = new DeferredPromise();
 
 // For later
-let processingQueue = new ProcessingQueue(processingQueueSettings);
+let queueManager = new QueueManager(queueManagerSettings);
 
 
 // --------------------------------
@@ -223,7 +223,7 @@ const fileSizeReadable = function (sizeBytes) {
 
 
 //
-const addUploadFilesToQueue = async (processingQueue, filteredTree, basePath = localFolder) => {
+const addUploadFilesToQueue = async (queueManager, filteredTree, basePath = localFolder) => {
     if (!filteredTree) {
         console.debug("No files to upload");
         return null;
@@ -233,10 +233,10 @@ const addUploadFilesToQueue = async (processingQueue, filteredTree, basePath = l
         if (treeEntry.type === 'file') {
             // console.debug("Sending file to be uploaded", {treeEntry, basePath});
             treeEntry.basePath = basePath;
-            processingQueue.addToQueue(treeEntry);
+            queueManager.addToQueue(treeEntry);
         }
         if (_.get(treeEntry, 'children.length') > 0) {
-            addUploadFilesToQueue(processingQueue, treeEntry.children, basePath);
+            addUploadFilesToQueue(queueManager, treeEntry.children, basePath);
         }
     });
 
@@ -335,13 +335,13 @@ startupCompletedPromise.then((values) => {
     // @todo: Work out how to NOT upload a file until it's been fully uploaded by Rsync (even if it gets only partly uploaded)
 
     let basePath = _.get(filteredTree, '0.path');
-    await addUploadFilesToQueue(processingQueue, filteredTree, basePath);
-    processingQueue.start();
-    console.log('processingQueue ', {
-        status: processingQueue.getStatus(),
-        queueCount: processingQueue.getQueueCount(),
-        consumerCount: processingQueue.getConsumerCount(),
-        activity: processingQueue.activity
+    await addUploadFilesToQueue(queueManager, filteredTree, basePath);
+    queueManager.start();
+    console.log('queueManager ', {
+        status: queueManager.getStatus(),
+        queueCount: queueManager.getQueueCount(),
+        consumerCount: queueManager.getConsumerCount(),
+        activity: queueManager.activity
     });
 
 

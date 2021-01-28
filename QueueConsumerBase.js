@@ -1,5 +1,5 @@
 const _ = require('lodash');
-const QueueAndConsumerBase = require('./ProcessorBase.js');
+const QueueAndConsumerBase = require('./QueueAndConsumerBase.js');
 
 /**
  *
@@ -7,7 +7,7 @@ const QueueAndConsumerBase = require('./ProcessorBase.js');
  */
 class QueueConsumerBase extends QueueAndConsumerBase {
     status = 'init';
-    processingQueue;
+    queueManager;
     processingStarted;
     processingPaused = false; // If true it doesn't take any new entries
     info = {}; // Custom Environment info provided when the queue was created
@@ -25,9 +25,9 @@ class QueueConsumerBase extends QueueAndConsumerBase {
     //     'errored': 'errored', // Errored obviously means something bad happened, it's likely the whole script should stop
     // }
 
-    constructor(processingQueue, consumerInfo = {}, settings = {}) {
+    constructor(queueManager, consumerInfo = {}, settings = {}) {
         super(settings);
-        this.processingQueue = processingQueue;
+        this.queueManager = queueManager;
         this.info = consumerInfo;
 
         this.setStatus(this.statuses.starting);
@@ -107,7 +107,7 @@ class QueueConsumerBase extends QueueAndConsumerBase {
             return null;
         }
         this.isActive = true;
-        let queueEntry = this.processingQueue.getQueueEntry();
+        let queueEntry = this.queueManager.getQueueEntry();
         if (null === queueEntry) {
             this.setStatus(this.statuses.idle);
             this.addActivity("No more queue entries, will wait for more");

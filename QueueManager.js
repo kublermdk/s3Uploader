@@ -1,5 +1,5 @@
 const _ = require('lodash');
-const QueueAndConsumerBase = require('./ProcessorBase.js');
+const QueueAndConsumerBase = require('./QueueAndConsumerBase.js');
 
 /**
  *

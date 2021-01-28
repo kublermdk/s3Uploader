@@ -1,4 +1,4 @@
-const ProcessingQueue = require('../ProcessingQueue.js');
+const QueueManager = require('../QueueManager.js');
 const QueueConsumer = require('../QueueConsumer.js');
 const QueueConsumerBase = require('../QueueConsumerBase.js');
 const dirTree = require("directory-tree");
@@ -19,18 +19,18 @@ QueueConsumerBase.processQueueEntry = async (entry) => {
     });
 };
 
-let processingQueueSettingsDefault = {consumerCount: 2, consumerClass: QueueConsumerBase};
-let processingQueueSettingsOne = {consumerCount: 1, consumerClass: QueueConsumerBase};
+let queueManagerSettingsDefault = {consumerCount: 2, consumerClass: QueueConsumerBase};
+let queueManagerSettingsOne = {consumerCount: 1, consumerClass: QueueConsumerBase};
 
 
 describe('Processing Queue', () => {
 
     test('is created', () => {
 
-        let processingQueue = new ProcessingQueue(processingQueueSettingsDefault);
-        expect(processingQueue).toBeDefined();
-        expect(processingQueue.getConsumerCount()).toBe(2);
-        expect(processingQueue.getStatistics()).toEqual({
+        let queueManager = new QueueManager(queueManagerSettingsDefault);
+        expect(queueManager).toBeDefined();
+        expect(queueManager.getConsumerCount()).toBe(2);
+        expect(queueManager.getStatistics()).toEqual({
             "consumerCount": 2,
             "queueCount": 0,
             "status": "init",
@@ -40,10 +40,10 @@ describe('Processing Queue', () => {
 
     test('can have a different consumerCount', () => {
 
-        let processingQueueSettingsOne = {consumerCount: 1, consumerClass: QueueConsumerBase};
-        let processingQueue = new ProcessingQueue(processingQueueSettingsOne);
-        expect(processingQueue.getConsumerCount()).toBe(1);
-        expect(processingQueue.getStatistics()).toEqual({
+        let queueManagerSettingsOne = {consumerCount: 1, consumerClass: QueueConsumerBase};
+        let queueManager = new QueueManager(queueManagerSettingsOne);
+        expect(queueManager.getConsumerCount()).toBe(1);
+        expect(queueManager.getStatistics()).toEqual({
             "consumerCount": 1,
             "queueCount": 0,
             "status": "init",
@@ -54,11 +54,11 @@ describe('Processing Queue', () => {
 
     test('is created', () => {
 
-        let processingQueue = new ProcessingQueue(processingQueueSettingsDefault);
-        expect(processingQueue.getQueueCount()).toBe(0);
-        processingQueue.addToQueue({name: "test"});
-        expect(processingQueue.getQueueCount()).toBe(1);
-        expect(processingQueue.getStatistics()).toEqual({
+        let queueManager = new QueueManager(queueManagerSettingsDefault);
+        expect(queueManager.getQueueCount()).toBe(0);
+        queueManager.addToQueue({name: "test"});
+        expect(queueManager.getQueueCount()).toBe(1);
+        expect(queueManager.getStatistics()).toEqual({
             "consumerCount": 2,
             "queueCount": 1,
             "status": "init",
@@ -69,30 +69,30 @@ describe('Processing Queue', () => {
 
     test('errors about no Queue Consumer', () => {
         expect(() => {
-            new ProcessingQueue();
+            new QueueManager();
         }).toThrow("Expecting a valid consumer class, none provided");
     });
 
 
     test('accepts an extended Queue Consumer', () => {
         // We use QueueConsumer not QueueConsumerBase
-        let processingQueue = new ProcessingQueue({consumerCount: 1, consumerClass: QueueConsumer});
-        expect(processingQueue.getStatistics()).toEqual({
+        let queueManager = new QueueManager({consumerCount: 1, consumerClass: QueueConsumer});
+        expect(queueManager.getStatistics()).toEqual({
             "consumerCount": 1,
             "queueCount": 0,
             "status": "init",
         });
-        expect(processingQueue.consumers[0]).toBeInstanceOf(QueueConsumer);
+        expect(queueManager.consumers[0]).toBeInstanceOf(QueueConsumer);
     });
 
 
     test('settings default', () => {
-        let processingQueue = new ProcessingQueue(processingQueueSettingsDefault);
-        expect(processingQueue.settings).toEqual({
+        let queueManager = new QueueManager(queueManagerSettingsDefault);
+        expect(queueManager.settings).toEqual({
             "activityLength": 100,
             "ident": expect.any(Number),
         });
-        expect(processingQueue.consumers[0].settings).toEqual({
+        expect(queueManager.consumers[0].settings).toEqual({
             "activityLength": 100,
             "ident": expect.any(String),
         });
@@ -101,12 +101,12 @@ describe('Processing Queue', () => {
 
 
     test('settings flow through', () => {
-        let processingQueue = new ProcessingQueue(processingQueueSettingsOne, {"activityLength": 1});
-        expect(processingQueue.settings).toEqual({
+        let queueManager = new QueueManager(queueManagerSettingsOne, {"activityLength": 1});
+        expect(queueManager.settings).toEqual({
             "activityLength": 1,
             "ident": expect.any(Number),
         });
-        expect(processingQueue.consumers[0].settings).toEqual({
+        expect(queueManager.consumers[0].settings).toEqual({
             "activityLength": 1,
             "ident": expect.any(String),
         });
@@ -115,56 +115,56 @@ describe('Processing Queue', () => {
 
 
     test('runs on start', async () => {
-        let processingQueue = new ProcessingQueue(processingQueueSettingsDefault);
-        // let processingQueue = new ProcessingQueue(processingQueueSettingsOne);
-        processingQueue.addToQueue({name: "test 1"});
-        processingQueue.addToQueue({name: "test 2"});
-        processingQueue.addToQueue({name: "test 3"});
-        processingQueue.addToQueue({name: "test 4"});
-        processingQueue.addToQueue({name: "test 5"});
+        let queueManager = new QueueManager(queueManagerSettingsDefault);
+        // let queueManager = new QueueManager(queueManagerSettingsOne);
+        queueManager.addToQueue({name: "test 1"});
+        queueManager.addToQueue({name: "test 2"});
+        queueManager.addToQueue({name: "test 3"});
+        queueManager.addToQueue({name: "test 4"});
+        queueManager.addToQueue({name: "test 5"});
 
         let dateStarted = new Date();
-        processingQueue.start();
+        queueManager.start();
         expect.assertions(3);
-        expect(processingQueue.getStatistics()).toEqual({
+        expect(queueManager.getStatistics()).toEqual({
             "consumerCount": expect.any(Number),
             "queueCount": expect.any(Number),
             "status": "started",
         });
 
-        let hasDrained = await processingQueue.drained();
+        let hasDrained = await queueManager.drained();
         expect(hasDrained).toBeTruthy();
         expect(hasDrained).toEqual(true);
         console.log("Drained in ", new Date().getTime() - dateStarted.getTime() + ' ms');
-        // console.log("Stats: ", processingQueue.getStatistics());
-        // console.log("Consumers: ", processingQueue.getStatistics(true).consumers);
+        // console.log("Stats: ", queueManager.getStatistics());
+        // console.log("Consumers: ", queueManager.getStatistics(true).consumers);
 
     });
 
 
     test('runs if queue is added after start', async () => {
-        let processingQueue = new ProcessingQueue(processingQueueSettingsDefault);
-        // let processingQueue = new ProcessingQueue(processingQueueSettingsOne);
+        let queueManager = new QueueManager(queueManagerSettingsDefault);
+        // let queueManager = new QueueManager(queueManagerSettingsOne);
         let dateStarted = new Date();
-        processingQueue.start();
-        processingQueue.addToQueue({name: "test 1"});
-        processingQueue.addToQueue({name: "test 2"});
-        processingQueue.addToQueue({name: "test 3"});
+        queueManager.start();
+        queueManager.addToQueue({name: "test 1"});
+        queueManager.addToQueue({name: "test 2"});
+        queueManager.addToQueue({name: "test 3"});
 
-        expect(processingQueue.getStatistics()).toEqual({
+        expect(queueManager.getStatistics()).toEqual({
             "consumerCount": expect.any(Number),
             "queueCount": expect.any(Number),
             "status": "started",
         });
 
-        let hasDrained = await processingQueue.drained();
+        let hasDrained = await queueManager.drained();
         expect(hasDrained).toEqual(true);
         // console.log("Drained in ", new Date().getTime() - dateStarted.getTime() + ' ms');
-        processingQueue.addToQueue({name: "test 3"});
-        await processingQueue.drained();
+        queueManager.addToQueue({name: "test 3"});
+        await queueManager.drained();
         // console.log("Drained again in total ", new Date().getTime() - dateStarted.getTime() + ' ms');
-        // console.log("Stats: ", processingQueue.getStatistics());
-        // console.log("Consumers: ", processingQueue.getStatistics(true).consumers);
+        // console.log("Stats: ", queueManager.getStatistics());
+        // console.log("Consumers: ", queueManager.getStatistics(true).consumers);
 
 
     });
