@@ -41,6 +41,7 @@ Most settings are configured via a .env variable
     MIME_TYPES=video/mp4,video/x-ms-wmv,video/x-flv,video/quicktime ; NB: Not enabled yet (requires a file stat check for each file)
     IGNORE_SELF=true
     LOCAL_EXCLUDE=/node_modules/
+    DELETE_ON_UPLOAD=false
 
 `LOCAL_FOLDER` is the location of the folder to periodically check and process. It defaults to the folder s3uploader.js is saved at if not specified.
 You can also specify a different folder by providing it as the first argument. e.g `node s3uploader.js /path/to/folder/`
@@ -66,6 +67,7 @@ If neither FILE_EXTENSIONS nor MIME_TYPES are specified then all file types are 
 
 `IGNORE_SELF` if true will check if the files are any supplied by s3 Uploader. It means you can run s3 uploader in the folder with other files to be uploaded and not upload s3 uploader itself.
 
+`DELETE_ON_UPLOAD` if true will delete the local file after it's been uploaded (done in the post processing method of the queueConsumer)
 
 
 

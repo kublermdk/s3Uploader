@@ -44,7 +44,7 @@ const QueueAndConsumerBase = require('./ProcessorBase.js');
  *
  * Maybe I should've just used https://caolan.github.io/async/v3/index.html
  */
-class ProcessingQueue extends QueueAndConsumerBase {
+class QueueManager extends QueueAndConsumerBase {
     queue = []; //
     consumers = [];
     consumersCreated = 0; // Used for idents even if you add/remove consumers
@@ -159,6 +159,12 @@ class ProcessingQueue extends QueueAndConsumerBase {
         });
     }
 
+    findWaitingConsumerIndex() {
+        return _.findIndex(this.consumers, consumer => {
+            return consumer.isActive === false && consumer.started === true && [this.statuses.paused, this.statuses.idle].includes(consumer.status);
+        });
+    }
+
     addConsumer() {
 
         this.consumersCreated++;
@@ -168,6 +174,40 @@ class ProcessingQueue extends QueueAndConsumerBase {
             this.options.consumerInfo,
             _.merge({}, this.settings, {ident: ident})));
         this.addActivity(`Added consumer ${ident} of ${this.options.consumerCount}`);
+    }
+
+    /**
+     * Will return a promise which is resolved once a consumer is removed
+     * Note: You shouldn't try removing too many consumers at once as it'll likely cause a race condition
+     * @returns {Promise<unknown>}
+     */
+    removeConsumer() {
+        return new Promise((resolve, reject) => {
+            if (this.consumers.length === 0) {
+                resolve(false);
+            }
+
+            let interval = setInterval(() => {
+                // We check again here because if you've tried removing multiple consumers at once we don't want to keep multiple removals pending until you've added them only to find them unexpectedly disappear again
+                if (this.consumers.length === 0) {
+                    resolve(false);
+                }
+                let consumerIndex = this.findWaitingConsumerIndex();
+                if (consumerIndex !== undefined) {
+                    this.consumers[consumerIndex].pause();
+                    this.consumers = this.consumers.splice(consumerIndex, 1); // Remove the consumer
+                    clearInterval(interval)
+                    resolve(consumerIndex);
+                }
+            }, 100);
+
+        });
+    }
+
+    pauseConsumers() {
+        _.each(this.consumers, consumer => {
+            consumer.pause();
+        })
     }
 
     /**
@@ -182,7 +222,12 @@ class ProcessingQueue extends QueueAndConsumerBase {
         return this.queue.shift();
     }
 
-
+    /**
+     * It's expected you'll use this for a web response or something similar
+     *
+     * @param verbose
+     * @returns {{queueCount: number, consumerCount: number, status: string}}
+     */
     getStatistics(verbose = false) {
 
         let stats = {
@@ -199,6 +244,13 @@ class ProcessingQueue extends QueueAndConsumerBase {
             )
         }
         return stats;
+    }
+
+    updateConsumerInfo(consumerInfo) {
+        _.each(this.consumers, consumer => {
+            consumer.info = consumerInfo;
+        });
+        return consumerInfo;
     }
 
     getQueueCount() {
@@ -221,4 +273,4 @@ class ProcessingQueue extends QueueAndConsumerBase {
 }
 
 
-module.exports = ProcessingQueue;
+module.exports = QueueManager;

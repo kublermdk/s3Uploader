@@ -9,7 +9,7 @@ class QueueConsumerBase extends QueueAndConsumerBase {
     status = 'init';
     processingQueue;
     processingStarted;
-
+    processingPaused = false; // If true it doesn't take any new entries
     info = {}; // Custom Environment info provided when the queue was created
     queueEntriesProcessed = 0;
 
@@ -40,6 +40,51 @@ class QueueConsumerBase extends QueueAndConsumerBase {
         return await this.run();
     }
 
+    /**
+     * NB: This doesn't wait until the processing is completed to return, it can take a while before it actually pauses
+     * as it will only pause fully when it goes to run
+     *
+     * @todo: Deal with stopped / stopping
+     */
+    pause() {
+        this.processingPaused = true;
+        if (this.started === true) {
+            return;
+        }
+
+        if (this.isActive === true) {
+            // It is currently processing
+            this.setStatus(this.statuses.pausing);
+        } else {
+            // It's idle (or maybe errored)
+            this.setStatus(this.statuses.paused);
+        }
+    }
+
+    /**
+     * @todo: Deal with stopped / stopping
+     * @returns {Promise<unknown>|string}
+     */
+    play() {
+        this.processingPaused = false;
+        if (this.started === false) {
+            // Haven't started yet
+            return;
+        }
+
+        if (this.isActive === true) {
+            // It is already processing
+            if (this.status === this.statuses.pausing) {
+                this.setStatus(this.statuses.processing);
+            }
+        } else {
+            // Not currently processing, so start it
+            this.setStatus(this.statuses.playing);
+            return this.run(); // Should we return this?
+        }
+        return this.status;
+    }
+
     getStatistics(verbose = false) {
         let stats = {
             status: this.getStatus(),
@@ -57,6 +102,10 @@ class QueueConsumerBase extends QueueAndConsumerBase {
 
     run = async () => {
 
+        if (this.processingPaused === true) {
+            this.setStatus(this.statuses.paused);
+            return null;
+        }
         this.isActive = true;
         let queueEntry = this.processingQueue.getQueueEntry();
         if (null === queueEntry) {
@@ -68,9 +117,23 @@ class QueueConsumerBase extends QueueAndConsumerBase {
 
         this.processingStarted = new Date();
         // console.log("Processing queueEntry", queueEntry);
+
+        // Pre-Process
+        queueEntry = await this.preProcessEntry(queueEntry).catch(err => {
+            this.addError(err);
+        });
+
+        // ----------------------------
+        //   The main process!
+        // ----------------------------
+
         let processedQueueResponse = await this.processQueueEntry(queueEntry).catch(err => {
             this.addError(err);
         }); // Run the actual main part
+
+        queueEntry = await this.postProcessEntry(queueEntry, processedQueueResponse).catch(err => {
+            this.addError(err);
+        });
 
         this.setStatus(this.statuses.processed);
         this.queueEntriesProcessed++;
@@ -79,18 +142,48 @@ class QueueConsumerBase extends QueueAndConsumerBase {
         // -- Run it again and check if there's another entry
         setTimeout(() => {
             this.run();
-        }, 5);
+        }, 1);
         return processedQueueResponse;
     }
 
-    processQueueEntry = async (entry) => {
+
+    /**
+     * This is mostly for you to replace in your own class
+     * Especially useful for changing the queueEntry if needed
+     *
+     * It's expected the queueEntry or something like it will be returned that's then used by the main processQueueEntry
+     * Note that this is triggered even if the setting to not process the queue (.env is ACTUALLY_UPLOAD) is false
+     *
+     * So you can set ACTUALLY_UPLOAD=false but put your own processing stuff here.
+     * Or a better option would be to replace the processQueueEntry method of the class before providing it to the queue manager
+     * @param queueEntry
+     * @returns {Promise<*>}
+     */
+    preProcessEntry = async (queueEntry) => {
+        return queueEntry;
+    }
+
+    processQueueEntry = async (queueEntry) => {
         // A very basic example which waits a bit before returning
         return new Promise((resolve, reject) => {
             setTimeout(() => {
-                entry.processed = true;
-                resolve(entry);
+                queueEntry.processed = true;
+                resolve(queueEntry);
             }, 500);
         });
+    }
+
+    /**
+     * Run after the queue entry has been processed
+     * In the S3 uploader this is the method where the file is deleted if DELETE_ON_UPLOAD=true
+     *
+     * This is provided both the original queueEntry and the processQueueResponse (the response from the processQueueEntry)
+     * @param queueEntry
+     * @param processQueueResponse
+     * @returns {Promise<void>}
+     */
+    postProcessEntry = async (queueEntry, processQueueResponse) => {
+        return queueEntry;
     }
 }
 
