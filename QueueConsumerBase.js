@@ -29,7 +29,6 @@ class QueueConsumerBase extends QueueAndConsumerBase {
         super(settings);
         this.queueManager = queueManager;
         this.info = consumerInfo;
-
         this.setStatus(this.statuses.starting);
     };
 
@@ -115,6 +114,7 @@ class QueueConsumerBase extends QueueAndConsumerBase {
             return null;
         }
 
+        this.setStatus(this.statuses.processing);
         this.processingStarted = new Date();
         // console.log("Processing queueEntry", queueEntry);
 

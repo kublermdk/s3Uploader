@@ -13,6 +13,14 @@ class QueueAndConsumerBase {
     isActive = false; // If true it's actively processing a queue entry. If false it can be farmed out
     errors = []; // A log of any errors
 
+    /**
+     * Settings are more intrinsic settings that aren't expected to change whilst the service is running
+     * e.g the identity of the consumer or manager or the maximum length of the activity listing
+     *
+     * Where as the consumer info is more for
+     *
+     * @type {{ident, activityLength: number}}
+     */
     settings = {
         ident: Math.random() * 1000, // Probably best replaced with the array index number
         activityLength: 100
@@ -43,24 +51,46 @@ class QueueAndConsumerBase {
         this.addActivity(`Setting the status from '${this.status}' to '${status}'`);
         this.status = status;
 
-        if (this.activity.length > this.settings.activityLength + 5) {
-            this.activity = this.activity.slice(0, this.settings.activityLength);
-        }
-
         if (status === this.statuses.started) {
             this.started = true;
             this.startedAt = new Date();
         }
     }
 
-    addError(error) {
-        this.errors.push(error);
+    /**
+     * Add Error
+     *
+     * Example usage:
+     * if (err) {
+     *     this.addError(err, 'S3 Upload Error');
+     *     reject(err);
+     * }
+     * @param error Error
+     * @param contextMessage String
+     */
+    addError(error, contextMessage = '') {
+        if ('' === contextMessage) {
+            contextMessage = this.status;
+        }
+        this.errors.push({error, contextMessage});
+        this.addActivity(`Error! ${contextMessage} ` + JSON.stringify(error));
         this.setStatus(this.statuses.errored);
-        console.error("An error occurred: ", error);
+        console.error(`An error occurred: ${contextMessage}`, error);
     }
 
-    addActivity(activityMessage) {
-        this.activity.push({message: activityMessage, date: new Date()});
+    addActivity(message, data = null) {
+        if (0 === this.settings.activityLength) {
+            // Don't add anything
+            return 0;
+        }
+        this.activity.push({message, data, date: new Date()});
+
+
+        if (this.settings.activityLength > 0 && this.activity.length > this.settings.activityLength) {
+            this.activity.shift(); // Remove an item from the start of the array. = this.activity.slice(0, this.settings.activityLength);
+        }
+
+        return this.activity.length;
     }
 
 
