@@ -8,7 +8,7 @@ const QueueAndConsumerBase = require('./QueueAndConsumerBase.js');
 class QueueConsumerBase extends QueueAndConsumerBase {
     status = 'init';
     queueManager;
-    processingStarted;
+    processingStarted; // new Date()
     processingPaused = false; // If true it doesn't take any new entries
     config = {}; // Custom Environment info provided when the queue was created
     defaultConfig = {}; // The default config to apply to the config
@@ -52,7 +52,7 @@ class QueueConsumerBase extends QueueAndConsumerBase {
             return;
         }
 
-        if (this.isActive === true) {
+        if (this.isProcessing === true) {
             // It is currently processing
             this.setStatus(this.statuses.pausing);
         } else {
@@ -72,7 +72,7 @@ class QueueConsumerBase extends QueueAndConsumerBase {
             return;
         }
 
-        if (this.isActive === true) {
+        if (this.isProcessing === true) {
             // It is already processing
             if (this.status === this.statuses.pausing) {
                 this.setStatus(this.statuses.processing);
@@ -88,7 +88,7 @@ class QueueConsumerBase extends QueueAndConsumerBase {
     getStatistics(verbose = false) {
         let stats = {
             status: this.getStatus(),
-            isActive: this.isActive,
+            isProcessing: this.isProcessing,
             started: this.started,
             queueEntriesProcessed: this.queueEntriesProcessed,
             errors: this.errors,
@@ -106,12 +106,12 @@ class QueueConsumerBase extends QueueAndConsumerBase {
             this.setStatus(this.statuses.paused);
             return null;
         }
-        this.isActive = true;
+        this.isProcessing = true;
         let queueEntry = this.queueManager.getQueueEntry();
         if (null === queueEntry) {
             this.setStatus(this.statuses.idle);
             this.addActivity("No more queue entries, will wait for more");
-            this.isActive = false;
+            this.isProcessing = false;
             return null;
         }
 
@@ -149,7 +149,7 @@ class QueueConsumerBase extends QueueAndConsumerBase {
         // -- Run it again and check if there's another entry
         setTimeout(() => {
             this.run();
-        }, 1);
+        }, this.settings.runTimeMs || 1);
         return processedQueueResponse;
     }
 
@@ -170,7 +170,13 @@ class QueueConsumerBase extends QueueAndConsumerBase {
         return queueEntry;
     }
 
-    processQueueEntry = async (queueEntry) => {
+    /**
+     * This is an example of an async queue processing method
+     * This is where the heart of your work should be, e.g uploading to S3, etc..
+     * @param queueEntry
+     * @returns {Promise<unknown>}
+     */
+    processQueueEntry = (queueEntry) => {
         // A very basic example which waits a bit before returning
         return new Promise((resolve, reject) => {
             setTimeout(() => {

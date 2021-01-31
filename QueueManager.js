@@ -109,8 +109,9 @@ class QueueManager extends QueueAndConsumerBase {
         queueEntry['__completedQueueTaskPromise'] = completedPromise;
         this.queue.push(queueEntry);
 
+        // If there's an idle consumer then wake it up
         if (this.started) {
-            let consumer = this.findWaitingConsumer();
+            let consumer = this.findIdleConsumer();
             if (consumer) {
                 consumer.run();
             }
@@ -155,19 +156,19 @@ class QueueManager extends QueueAndConsumerBase {
 
     findBusyConsumer() {
         return _.find(this.consumers, consumer => {
-            return consumer.isActive === true && consumer.started === true;
+            return consumer.isProcessing === true;
         });
     }
 
-    findWaitingConsumer() {
+    findIdleConsumer() {
         return _.find(this.consumers, consumer => {
-            return consumer.isActive === false && consumer.started === true;
+            return consumer.isProcessing === false;
         });
     }
 
-    findWaitingConsumerIndex() {
+    findIdleConsumerIndex() {
         return _.findIndex(this.consumers, consumer => {
-            return consumer.isActive === false && consumer.started === true && [this.statuses.paused, this.statuses.idle].includes(consumer.status);
+            return consumer.isProcessing === false;
         });
     }
 
@@ -179,7 +180,7 @@ class QueueManager extends QueueAndConsumerBase {
             this,
             this.options.consumerConfig,
             _.merge({}, this.settings, {ident: ident})));
-        this.addActivity(`Added consumer ${ident} of ${this.options.consumerCount}`);
+        this.addActivity(`Added consumer ${ident} of ${this.consumersCreated > this.options.consumerCount ? this.consumersCreated : this.options.consumerCount}`);
     }
 
     /**
@@ -193,22 +194,66 @@ class QueueManager extends QueueAndConsumerBase {
                 resolve(false);
             }
 
-            let interval = setInterval(() => {
+
+            // let timer;
+
+            let removeAConsumer = (timer = null) => {
                 // We check again here because if you've tried removing multiple consumers at once we don't want to keep multiple removals pending until you've added them only to find them unexpectedly disappear again
                 if (this.consumers.length === 0) {
+                    this.addActivity(`removeConsumer() there's no consumers to remove`);
                     resolve(false);
+                    return false;
                 }
-                let consumerIndex = this.findWaitingConsumerIndex();
-                if (consumerIndex !== undefined) {
-                    this.consumers[consumerIndex].pause();
-                    this.consumers = this.consumers.splice(consumerIndex, 1); // Remove the consumer
-                    clearInterval(interval)
+                let consumerIndex = this.findIdleConsumerIndex();
+                if (consumerIndex !== undefined && consumerIndex !== -1) {
+                    this.addActivity(`Removing consumer at index ${consumerIndex}`);
+                    let consumer = this.consumers[consumerIndex];
+                    console.log("Found an idle Consumer to remove at index ", consumerIndex, consumer.getStatistics(true));
+                    consumer.pause();
+                    this.consumers.splice(consumerIndex, 1); // Remove the consumer from the array, but we don't actually unset it...
+                    // @todo: Unset the consumer when it has finished pausing
                     resolve(consumerIndex);
+                    return true;
                 }
-            }, this.options.removeConsumerTime);
+                // Try again later
+                setTimeout(removeAConsumer, this.options.removeConsumerTime || 100)
+                return false;
+            };
+
+            removeAConsumer(); // Initial run
+
+            let consumerRemoved = false;
+            // async () => {
+            //
+            //     do {
+            //         console.log('Waiting: ', this.options.removeConsumerTime || 100);
+            //         this.sleep(this.options.removeConsumerTime || 100);
+            //         consumerRemoved = removeAConsumer();
+            //     } while (consumerRemoved === false);
+            // }();
+            //
+            // (async () => {
+            //     while () {
+            //
+            //     }
+            //
+            // });
+            // while(false === removeAConsumer()) {
+            //     await
+            // }
 
         });
     }
+
+
+    // sleep(waitTime) {
+    //     return new Promise((resolve, reject) => {
+    //         setTimeout(() => {
+    //             resolve(true);
+    //         }, waitTime);
+    //     });
+    // }
+
 
     pauseConsumers() {
         _.each(this.consumers, consumer => {

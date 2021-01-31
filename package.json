@@ -22,7 +22,8 @@
     "dotenv": "^8.2.0",
     "lodash": "^4.17.20",
     "path": "^0.12.7",
-    "promise-deferred": "^2.0.3"
+    "promise-deferred": "^2.0.3",
+    "sha256-file": "^1.0.0"
   },
   "devDependencies": {
     "jest": "^26.6.3"

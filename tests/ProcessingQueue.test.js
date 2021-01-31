@@ -20,7 +20,7 @@ let queueManagerOptions = {
     consumerClass: QueueConsumerTest, // Required
     consumerInfo: {},
     drainedCheckingTime: 2, // Shortened because we are dealing with very short processes
-    removeConsumerTime: 1, // Shortened because we are dealing with very short processes
+    removeConsumerTime: 50, // Shortened because we are dealing with very short processes
 }
 
 let queueManagerSettingsDefault = queueManagerOptions;
@@ -38,6 +38,32 @@ let dirTreeResponse = dirTree(localResourcesFolder, dirTreeOptions);
 // ====================================================================================
 //     Queue Manager
 // ====================================================================================
+
+
+/**
+ * Wait Time
+ *
+ * Wait a certain amount of time then resolve the promise, good for
+ * @example await waitTime(1);
+ * @example await waitTime(100);
+ * @param waitMs
+ * @returns {Promise<unknown>}
+ */
+let waitTime = (waitMs = 1) => {
+    return new Promise((resolve, reject) => {
+        setTimeout(() => {
+            resolve(true);
+        }, waitMs);
+    });
+}
+
+let waitImmediate = () => {
+    return new Promise((resolve, reject) => {
+        setImmediate(() => {
+            resolve(true);
+        });
+    });
+}
 
 describe('Processing Queue', () => {
 
@@ -191,19 +217,21 @@ describe('Processing Queue', () => {
 
     test('runs on start', async () => {
 
-        queueManager = new QueueManager(queueManagerSettingsDefault);
+        let queueManager = new QueueManager(queueManagerSettingsDefault);
         // let queueManager = new QueueManager(queueManagerSettingsOne);
         queueManager.addToQueue({name: "test 1"});
         queueManager.addToQueue({name: "test 2"});
         queueManager.addToQueue({name: "test 3"});
-        queueManager.addToQueue({name: "test 4"});
-        let queueProcessed5Promise = queueManager.addToQueue({name: "test 5"});
+        let queueProcessed4promise = queueManager.addToQueue({name: "test 4"});
 
-        expect(queueProcessed5Promise).toBeInstanceOf(DeferredPromise);
-        expect(queueProcessed5Promise._promise).toBeInstanceOf(Promise);
+        expect(queueProcessed4promise).toBeInstanceOf(DeferredPromise);
+        expect(queueProcessed4promise._promise).toBeInstanceOf(Promise);
 
         let dateStarted = new Date();
         queueManager.start();
+        // let queueProcessed5response = await queueManager.addToQueue({name: "test 5"}); // Can't await for a queue task if the queue hasn't started otherwise it just times out
+        let queueProcessed5promise = queueManager.addToQueue({name: "test 5"}); // Can't await for a queue task if the queue hasn't started otherwise it just times out
+
         // expect.assertions(3);
         expect(queueManager.getStatistics()).toEqual({
             "consumerCount": expect.any(Number),
@@ -211,24 +239,25 @@ describe('Processing Queue', () => {
             "status": "started",
         });
 
-        expect(queueProcessed5Promise).toBeInstanceOf(DeferredPromise);
-        let hasDrained = await queueManager.drained();
-        expect(hasDrained).toBeTruthy();
-        expect(hasDrained).toEqual(true);
+
         // console.log("Drained in ", new Date().getTime() - dateStarted.getTime() + ' ms');
 
-        expect(queueProcessed5Promise).resolves.toEqual({
+        await queueManager.drained();
+        // let queueProcessed5response = await queueProcessed5Promise;
+        expect(queueProcessed5promise).resolves.toEqual({
             name: "test 5",
             __completedQueueTaskPromise: expect.any(DeferredPromise),
             processed: true,
         });
 
-        let queueProcessed5resolved = await queueProcessed5Promise;
-        expect(queueProcessed5resolved).toEqual({
-            name: "test 5",
-            __completedQueueTaskPromise: expect.any(DeferredPromise),
-            processed: true,
-        });
+        let hasDrained = await queueManager.drained();
+        expect(hasDrained).toEqual(true);
+        // let queueProcessed5resolved = await queueProcessed5Promise;
+        // expect(queueProcessed5resolved).toEqual({
+        //     name: "test 5",
+        //     __completedQueueTaskPromise: expect.any(DeferredPromise),
+        //     processed: true,
+        // });
 
     });
 
@@ -261,6 +290,62 @@ describe('Processing Queue', () => {
 
     });
 
+    test('array splice', () => {
+        let consumers = [0, 1, 2, 3, 4, 5, 6, 7];
+        expect(consumers.length).toEqual(8);
+        consumers.splice(0, 1); // Remove 0 the first entry
+        expect(consumers.length).toEqual(7);
+        consumers.splice(2, 1); // Remove what is now 3 (at index 2 or the 3rd entry along)
+        expect(consumers.length).toEqual(6);
+        expect(consumers).toEqual([1, 2, 4, 5, 6, 7]);
+        // console.log(consumers);
+
+    })
+
+    test('removing and adding consumers before starting', async () => {
+        let queueManager = new QueueManager(queueManagerSettingsDefault);
+        expect(queueManager.consumers.length).toEqual(2);
+
+        let dateStartRemoving = new Date();
+        let removeConsumerNotStarted = await queueManager.removeConsumer();
+        // console.log("Removing a consumer took ", new Date().getTime() - dateStartRemoving.getTime() + 'ms');
+        await waitImmediate();
+        expect(queueManager.consumers.length).toEqual(1);
+        expect(removeConsumerNotStarted).toEqual(0); // It will see and remove the first entry which is the index number it returns
+
+        queueManager.addConsumer();
+        queueManager.addConsumer();
+        expect(queueManager.consumers.length).toEqual(3);
+        // console.log('There should be 3 consumers created', queueManager.getStatistics(true));
+        let removeConsumerIndex = await queueManager.removeConsumer();
+
+        expect(removeConsumerIndex).toEqual(0); // Not started, so again it'll be at index 0 that it's removed
+        // console.log('There should be 2 consumers left', queueManager.getStatistics(true));
+        expect(queueManager.consumers.length).toEqual(2);
+        expect(queueManager.consumersCreated).toEqual(4);
+
+    });
+
+    //
+    test('removing and adding consumers after starting', async () => {
+        let queueManager = new QueueManager(queueManagerSettingsDefault);
+        queueManager.start();
+        queueManager.addToQueue({message: 'Initial Test 1'});
+        let processedQueue2 = await queueManager.addToQueue({message: 'Initial Test 2'});
+        _.each(_.range(0, 3), (index) => {
+            queueManager.addToQueue({message: 'Test message ' + index});
+        });
+        await waitImmediate(); // Give it all long enough for the processes to be farmed out
+
+        expect(queueManager.consumers.length).toEqual(2);
+        expect(queueManager.findIdleConsumerIndex()).toEqual(-1);
+
+        let removeConsumerIndex = await queueManager.removeConsumer();
+        console.log("Removed consumer at index: ", removeConsumerIndex);
+        expect(removeConsumerIndex).toBeGreaterThanOrEqual(0);
+        expect(queueManager.consumers.length).toEqual(1);
+
+    });
 });
 
 
@@ -306,99 +391,105 @@ describe('Dir Tree', () => {
 // ====================================================================================
 //     S3 uploader (Queue Consumer)
 // ====================================================================================
-describe('S3 uploading consumer works', () => {
-
-    let s3ConsumerSettings = {
-        consumerCount: 1,
-        consumerClass: QueueConsumerS3, // The s3 queue Consumer
-        consumerConfig: {
-            AWS_PROFILE: process.env.AWS_PROFILE_TESTING,
-            AWS_S3_BUCKET: process.env.AWS_S3_BUCKET_TESTING,
-            AWS_S3_BUCKET_FOLDER: process.env.AWS_S3_BUCKET_FOLDER_TESTING,
-            AWS_REGION: process.env.AWS_REGION,
-            OVERWRITE_FILE: true, // Overwrite the file anyway
-            OVERWRITE_EXISTING_IF_DIFFERENT: true
-        },
-        drainedCheckingTime: 20, // Shortened because we are dealing with very short processes
-        removeConsumerTime: 10, // Shortened because we are dealing with very short processes
-    }
-    let queueEntry = dirTreeResponse.children[0];
-    let Key = s3ConsumerSettings.consumerConfig.AWS_S3_BUCKET_FOLDER + "/1x1.gif";
-    let Location =  `https://${s3ConsumerSettings.consumerConfig.AWS_S3_BUCKET}.s3.${s3ConsumerSettings.consumerConfig.AWS_REGION}.amazonaws.com/${Key}`;
-    test('s3 consumer default configuration got applied', () => {
-        let queueManager = new QueueManager(s3ConsumerSettings);
-        expect(queueManager.consumers[0].config).toEqual(_.merge({
-            OVERWRITE_EXISTING_IF_DIFFERENT: true,
-            OVERWRITE: false,
-            S3_UPLOAD_OPTIONS_STORAGE_CLASS: 'STANDARD',
-            S3_UPLOAD_OPTIONS_PART_SIZE: 10485760,
-            S3_UPLOAD_ACL: 'bucket-owner-full-control'
-
-        }, s3ConsumerSettings.consumerConfig));
-        console.debug(queueManager.consumers[0].config);
-
-    });
-
-    test('1x1.gif uploads', async () => {
-        // Make sure we are only processing a single 1x1.gif
-        expect(dirTreeResponse.children.length).toEqual(1);
-        expect(dirTreeResponse.children[0].name).toEqual("1x1.gif");
-
-
-        expect(process.env.AWS_PROFILE_TESTING).toBeDefined();
-        expect(process.env.AWS_S3_BUCKET_TESTING).toBeDefined();
-        expect(process.env.AWS_S3_BUCKET_FOLDER_TESTING).toBeDefined();
-
-        // e.g in .env you might have:
-        // AWS_PROFILE_TESTING=testing
-        // AWS_S3_BUCKET_TESTING=testing-s3uploader
-        // AWS_S3_BUCKET_FOLDER_TESTING=testing
-
-
-        queueEntry.basePath = dirTreeResponse.path;
-
-        let queueManager = new QueueManager(s3ConsumerSettings);
-        queueManager.start();
-        let entryResult = await queueManager.addToQueue(queueEntry); // NB: This doesn't resolve if the queueManger isn't started already
-
-
-        expect(entryResult).toEqual({
-            localFilePath: expect.any(String),
-            data: {
-                Bucket: s3ConsumerSettings.consumerConfig.AWS_S3_BUCKET,
-                Key,
-                Location,
-                ETag: expect.any(String), // e.g "d41d8cd98f00b204e9800998ecf8427e"
-                ServerSideEncryption: expect.any(String), // If you have it enabled it's likely AES256
-            },
-            uploadProcessingTime: expect.any(Number), // e.g 4123
-            treeEntry: expect.anything(),
-        });
-
-        await queueManager.drained(); // Want to see the consumers status be set to idle
-        console.log('Uploaded the 1x1.gif activity: ', queueManager.consumers[0].getActivity());
-
-    });
-
-    // test('same 1x1.gif doesn\'t get overridden', async () => {
-    //
-    //     let s3ConsumerSettingsDontOverwrite = _.merge({}, s3ConsumerSettings, {consumerInfo: {OVERWRITE_FILE: false}});
-    //     let queueManager = new QueueManager(s3ConsumerSettingsDontOverwrite);
-    //     queueManager.start();
-    //     let entryResult = await queueManager.addToQueue(queueEntry); // NB: This doesn't resolve if the queueManger isn't started already
-    //     expect(entryResult).toEqual({
-    //         localFilePath: expect.any(String),
-    //         data: {
-    //             Bucket: s3ConsumerSettings.consumerConfig.AWS_S3_BUCKET,
-    //             Key,
-    //             Location,
-    //             ETag: expect.any(String), // e.g "d41d8cd98f00b204e9800998ecf8427e"
-    //             ServerSideEncryption: expect.any(String), // If you have it enabled it's likely AES256
-    //         },
-    //         uploadProcessingTime: expect.any(Number), // e.g 4123
-    //         treeEntry: expect.anything(),
-    //     });
-    //
-    // });
-
-});
+// describe('S3 uploading consumer', () => {
+//
+//     let s3ConsumerSettings = {
+//         consumerCount: 1,
+//         consumerClass: QueueConsumerS3, // The s3 queue Consumer
+//         consumerConfig: {
+//             AWS_PROFILE: process.env.AWS_PROFILE_TESTING,
+//             AWS_S3_BUCKET: process.env.AWS_S3_BUCKET_TESTING,
+//             AWS_S3_BUCKET_FOLDER: process.env.AWS_S3_BUCKET_FOLDER_TESTING,
+//             AWS_REGION: process.env.AWS_REGION,
+//             OVERWRITE_FILE: true, // Overwrite the file anyway
+//             OVERWRITE_EXISTING_IF_DIFFERENT: true
+//         },
+//         drainedCheckingTime: 20, // Shortened because we are dealing with very short processes
+//         removeConsumerTime: 10, // Shortened because we are dealing with very short processes
+//     }
+//     let queueManager = new QueueManager(s3ConsumerSettings);
+//
+//     const queueEntry = dirTreeResponse.children[0];
+//     const Key = s3ConsumerSettings.consumerConfig.AWS_S3_BUCKET_FOLDER + "/1x1.gif";
+//     const Location = `https://${s3ConsumerSettings.consumerConfig.AWS_S3_BUCKET}.s3.${s3ConsumerSettings.consumerConfig.AWS_REGION}.amazonaws.com/${Key}`;
+//
+//
+//     test('default configuration gets applied', () => {
+//         expect(queueManager.consumers[0].config).toEqual(_.merge({}, s3ConsumerSettings.consumerConfig, queueManager.consumers[0].defaultConfig));
+//         console.debug('queueManager.consumers[0].config: ', queueManager.consumers[0].config);
+//     });
+//
+//     test('workOutS3PartSize method works as expected', () => {
+//         expect(queueManager.consumers[0].workOutS3PartSize({size: 100})).toEqual(10485760); // A 100 byte file should easily fit in 10MB (10485760 = 10 * 1024 * 1024 )
+//         expect(queueManager.consumers[0].workOutS3PartSize({size: 11 * 1024 * 1024})).toEqual(10485760); // An 11MB byte file should still be 10MB parts
+//         expect(queueManager.consumers[0].workOutS3PartSize({size: 600 * 1024 * 1024 * 1024})).toEqual(64437397); // A 600GB file is 644,245,094,400 Bytes = 600 * 1024 * 1024 * 1024 which when split into 9998 parts is 64Mb (64437396.91938388 rounded up to  64437397)
+//     })
+//
+//
+//     test('1x1.gif uploads', async () => {
+//         // Make sure we are only processing a single 1x1.gif
+//         expect(dirTreeResponse.children.length).toEqual(1);
+//         expect(dirTreeResponse.children[0].name).toEqual("1x1.gif");
+//
+//
+//         expect(process.env.AWS_PROFILE_TESTING).toBeDefined();
+//         expect(process.env.AWS_S3_BUCKET_TESTING).toBeDefined();
+//         expect(process.env.AWS_S3_BUCKET_FOLDER_TESTING).toBeDefined();
+//
+//         // e.g in .env you might have:
+//         // AWS_PROFILE_TESTING=testing
+//         // AWS_S3_BUCKET_TESTING=testing-s3uploader
+//         // AWS_S3_BUCKET_FOLDER_TESTING=testing
+//
+//
+//         queueEntry.basePath = dirTreeResponse.path;
+//
+//         queueManager = new QueueManager(s3ConsumerSettings); // Reset it in case the other tests have modified the consumer, etc..
+//         queueManager.start();
+//         let entryResult = await queueManager.addToQueue(queueEntry).catch(err => {
+//             expect(err).toBeInstanceOf(Error);
+//             console.error("=== TESTING ERROR == ", err);
+//         }); // NB: This doesn't resolve if the queueManger isn't started already
+//
+//         console.log('Uploaded the 1x1.gif activity: ', queueManager.consumers[0].getActivity());
+//
+//         expect(entryResult).toEqual({
+//             localFilePath: expect.any(String),
+//             data: {
+//                 Bucket: s3ConsumerSettings.consumerConfig.AWS_S3_BUCKET,
+//                 Key,
+//                 Location,
+//                 ETag: expect.any(String), // e.g "d41d8cd98f00b204e9800998ecf8427e"
+//                 ServerSideEncryption: expect.any(String), // If you have it enabled it's likely AES256
+//             },
+//             uploadProcessingTime: expect.any(Number), // e.g 4123
+//             treeEntry: expect.anything(),
+//         });
+//
+//         await queueManager.drained(); // Want to see the consumers status be set to idle
+//         console.log('Uploaded the 1x1.gif activity: ', queueManager.consumers[0].getActivity());
+//
+//     });
+//
+//     // test('same 1x1.gif doesn\'t get overridden', async () => {
+//     //
+//     //     let s3ConsumerSettingsDontOverwrite = _.merge({}, s3ConsumerSettings, {consumerInfo: {OVERWRITE_FILE: false}});
+//     //     let queueManager = new QueueManager(s3ConsumerSettingsDontOverwrite);
+//     //     queueManager.start();
+//     //     let entryResult = await queueManager.addToQueue(queueEntry); // NB: This doesn't resolve if the queueManger isn't started already
+//     //     expect(entryResult).toEqual({
+//     //         localFilePath: expect.any(String),
+//     //         data: {
+//     //             Bucket: s3ConsumerSettings.consumerConfig.AWS_S3_BUCKET,
+//     //             Key,
+//     //             Location,
+//     //             ETag: expect.any(String), // e.g "d41d8cd98f00b204e9800998ecf8427e"
+//     //             ServerSideEncryption: expect.any(String), // If you have it enabled it's likely AES256
+//     //         },
+//     //         uploadProcessingTime: expect.any(Number), // e.g 4123
+//     //         treeEntry: expect.anything(),
+//     //     });
+//     //
+//     // });
+//
+// });

@@ -10,7 +10,7 @@ class QueueAndConsumerBase {
     status = 'init';
     activity = []; // An array of information about what the consumer has been doing.
     started = false; // When true it has begun wanting to be processing
-    isActive = false; // If true it's actively processing a queue entry. If false it can be farmed out
+    isProcessing = false; // If true it's actively processing a queue entry. If false it can look for a new one or be removed safely
     errors = []; // A log of any errors
 
     /**
@@ -70,12 +70,12 @@ class QueueAndConsumerBase {
      */
     addError(error, contextMessage = '') {
         if ('' === contextMessage) {
-            contextMessage = this.status;
+            contextMessage = `Status: ${this.status}, Ident: ${this.settings.ident}`;
         }
         this.errors.push({error, contextMessage});
-        this.addActivity(`Error! ${contextMessage} ` + JSON.stringify(error));
-        this.setStatus(this.statuses.errored);
+        this.addActivity(`Error! ${contextMessage}`, error);
         console.error(`An error occurred: ${contextMessage}`, error);
+        this.setStatus(this.statuses.errored);
     }
 
     addActivity(message, data = null) {
