@@ -135,9 +135,15 @@ class QueueConsumerBase extends QueueAndConsumerBase {
             this.addError(err);
         });
 
+
         this.setStatus(this.statuses.processed);
         this.queueEntriesProcessed++;
         this.addActivity(`Processed queueEntry #${this.queueEntriesProcessed} in ` + (new Date().getTime() - this.processingStarted.getTime()) + ' ms');
+
+        // -- Resolve the queue task promise
+        if (queueEntry['__completedQueueTaskPromise']) {
+            queueEntry['__completedQueueTaskPromise'].resolve(processedQueueResponse);
+        }
 
         // -- Run it again and check if there's another entry
         setTimeout(() => {

@@ -1,5 +1,6 @@
 const _ = require('lodash');
 const QueueAndConsumerBase = require('./QueueAndConsumerBase.js');
+const DeferredPromise = require('./DeferredPromise.js');
 
 /**
  *
@@ -67,6 +68,8 @@ class QueueManager extends QueueAndConsumerBase {
         consumerCount: 2,
         consumerClass: null, // Required
         consumerInfo: {},
+        drainedCheckingTime: 200, // in miliseconds, you can lower it for short run processes if you want
+        removeConsumerTime: 100, // in miliseconds, you can lower it when using short run processes if you want
     }
 
     constructor(options = {}, settings = {}) {
@@ -102,6 +105,8 @@ class QueueManager extends QueueAndConsumerBase {
      * @param queueEntry
      */
     addToQueue(queueEntry) {
+        let completedPromise = new DeferredPromise();
+        queueEntry['__completedQueueTaskPromise'] = completedPromise;
         this.queue.push(queueEntry);
 
         if (this.started) {
@@ -110,6 +115,7 @@ class QueueManager extends QueueAndConsumerBase {
                 consumer.run();
             }
         }
+        return completedPromise;
     }
 
     /**
@@ -135,7 +141,7 @@ class QueueManager extends QueueAndConsumerBase {
                     clearInterval(interval);
                     resolve(true);
                 }
-            }, 200);
+            }, this.options.drainedCheckingTime);
 
         });
     }
@@ -199,7 +205,7 @@ class QueueManager extends QueueAndConsumerBase {
                     clearInterval(interval)
                     resolve(consumerIndex);
                 }
-            }, 100);
+            }, this.options.removeConsumerTime);
 
         });
     }

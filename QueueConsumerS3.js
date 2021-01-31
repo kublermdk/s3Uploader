@@ -3,7 +3,7 @@ const QueueConsumerBase = require('./QueueConsumerBase.js');
 /**
  *
  */
-class QueueConsumer extends QueueConsumerBase {
+class QueueConsumerS3 extends QueueConsumerBase {
 
 
     processQueueEntry = async (treeEntry) => {
@@ -71,7 +71,12 @@ class QueueConsumer extends QueueConsumerBase {
             // });
         });
     }
+
+    postProcessEntry = async (queueEntry, processQueueResponse) => {
+        // @todo: Remove the file if DELETE_ON_UPLOAD=true
+        return queueEntry;
+    }
 }
 
 
-module.exports = QueueConsumer;
+module.exports = QueueConsumerS3;

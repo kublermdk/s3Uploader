@@ -6,7 +6,7 @@ const path = require('path');
 const dirTree = require("directory-tree");
 const DeferredPromise = require('./DeferredPromise.js');
 const QueueManager = require('./QueueManager.js');
-const QueueConsumer = require('./QueueConsumer.js');
+const QueueConsumer = require('./QueueConsumerS3.js');
 const _ = require('lodash');
 let queueManagerSettings = {consumerCount: 2, consumerClass: QueueConsumer};
 
