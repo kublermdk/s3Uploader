@@ -10,7 +10,8 @@ class QueueConsumerBase extends QueueAndConsumerBase {
     queueManager;
     processingStarted;
     processingPaused = false; // If true it doesn't take any new entries
-    info = {}; // Custom Environment info provided when the queue was created
+    config = {}; // Custom Environment info provided when the queue was created
+    defaultConfig = {}; // The default config to apply to the config
     queueEntriesProcessed = 0;
 
     // statuses = {
@@ -25,10 +26,10 @@ class QueueConsumerBase extends QueueAndConsumerBase {
     //     'errored': 'errored', // Errored obviously means something bad happened, it's likely the whole script should stop
     // }
 
-    constructor(queueManager, consumerInfo = {}, settings = {}) {
+    constructor(queueManager, consumerConfig = {}, settings = {}) {
         super(settings);
         this.queueManager = queueManager;
-        this.info = consumerInfo;
+        this.config = _.merge({}, this.defaultConfig, consumerConfig);
         this.setStatus(this.statuses.starting);
     };
 

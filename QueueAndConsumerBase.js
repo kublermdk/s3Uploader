@@ -17,7 +17,7 @@ class QueueAndConsumerBase {
      * Settings are more intrinsic settings that aren't expected to change whilst the service is running
      * e.g the identity of the consumer or manager or the maximum length of the activity listing
      *
-     * Where as the consumer info is more for
+     * Where as the consumer config is more for configuration options of the consumer (e.g S3 bucket name and folder)
      *
      * @type {{ident, activityLength: number}}
      */
@@ -103,7 +103,7 @@ class QueueAndConsumerBase {
         _.each(this.activity, activityEntry => {
             // console.log(activity);
             // e.g { message: "Setting the status from 'init' to 'starting'", date: 2021-01-27T19:19:54.496Z }
-            activities.push(activityEntry.date.toISOString() + ' ' + activityEntry.message);
+            activities.push(activityEntry.date.toISOString() + ' ' + activityEntry.message + (activityEntry.data === null ? '' : ': ' + JSON.stringify(activityEntry.data)));
         });
         return activities && activities.join(`\n`);
     }

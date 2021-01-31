@@ -37,6 +37,7 @@ let ignoreSelf = JSON.parse(_.get(process, 'env.IGNORE_SELF', true));
 let recurseFolder = JSON.parse(_.get(process, 'env.RECURSE_FOLDER', false));
 let checkAwsBucketAtStartup = JSON.parse(_.get(process, 'env.CHECK_AWS_BUCKET_AT_STARTUP', true)); // parse it from a string to bool. Using _.get instead of || as it'll only return true even if set to false
 let actuallyUpload = JSON.parse(_.get(process, 'env.ACTUALLY_UPLOAD', true));
+let overwriteExisting = JSON.parse(_.get(process, 'env.OVERWRITE_EXISTING_IF_DIFFERENT', true));
 // -- The local excludes are a csv string that gets turned into an array of regex entries
 let localExclude = [];
 if (process.env.LOCAL_EXCLUDE) {
@@ -49,6 +50,16 @@ if (process.env.LOCAL_EXCLUDE) {
     }
 } else {
     localExclude.push(/node_modules/);
+}
+
+
+let s3Config = {
+    AWS_REGION: process.env.AWS_REGION,
+    AWS_S3_BUCKET: s3BucketName,
+    AWS_S3_BUCKET_FOLDER: s3BucketFolder,
+    AWS_CONFIG_FILE: process.env.AWS_CONFIG_FILE,
+    AWS_PROFILE: process.env.AWS_PROFILE,
+    OVERWRITE_EXISTING_IF_DIFFERENT: checkAwsBucketAtStartup,
 }
 
 
@@ -67,6 +78,7 @@ console.log("===============================\n",
         LOCAL_EXCLUDE: localExclude,
         RECURSE_FOLDER: recurseFolder,
         CHECK_AWS_BUCKET_AT_STARTUP: checkAwsBucketAtStartup,
+        OVERWRITE_EXISTING_IF_DIFFERENT: checkAwsBucketAtStartup,
         args,
     });
 
@@ -325,8 +337,8 @@ startupCompletedPromise.then((values) => {
 
     // @todo: Check if the file exists before trying to upload it
     // @todo: Default upload type (e.g x-amz-storage-class able to be set to DEEP_ARCHIVE)
-    // @todo: MIME_TYPES
-    // @todo: IGNORE_SELF
+    // @todo: MIME_TYPES ?? Not right now
+    // @todo: IGNORE_SELF (__file and also .env, assumes it's been compiled to a single file)
     // @todo: Have a local webserver
     // @todo: Regular checking
 

@@ -152,8 +152,8 @@ describe('Processing Queue', () => {
         expect(queueManager.consumers[0].activity.length).toEqual(2);
         // Ensure we are seeing only the latest messages, not the older ones
         expect(queueManager.consumers[0].activity).toEqual([
-            {date: expect.any(Date), message: 'Test message 2'},
-            {date: expect.any(Date), message: 'Test message 3'}
+            {date: expect.any(Date), data: null, message: 'Test message 2'},
+            {date: expect.any(Date), data: null, message: 'Test message 3'}
         ]);
     });
 
@@ -311,7 +311,7 @@ describe('S3 uploading consumer works', () => {
     let s3ConsumerSettings = {
         consumerCount: 1,
         consumerClass: QueueConsumerS3, // The s3 queue Consumer
-        consumerInfo: {
+        consumerConfig: {
             AWS_PROFILE: process.env.AWS_PROFILE_TESTING,
             AWS_S3_BUCKET: process.env.AWS_S3_BUCKET_TESTING,
             AWS_S3_BUCKET_FOLDER: process.env.AWS_S3_BUCKET_FOLDER_TESTING,
@@ -323,6 +323,21 @@ describe('S3 uploading consumer works', () => {
         removeConsumerTime: 10, // Shortened because we are dealing with very short processes
     }
     let queueEntry = dirTreeResponse.children[0];
+    let Key = s3ConsumerSettings.consumerConfig.AWS_S3_BUCKET_FOLDER + "/1x1.gif";
+    let Location =  `https://${s3ConsumerSettings.consumerConfig.AWS_S3_BUCKET}.s3.${s3ConsumerSettings.consumerConfig.AWS_REGION}.amazonaws.com/${Key}`;
+    test('s3 consumer default configuration got applied', () => {
+        let queueManager = new QueueManager(s3ConsumerSettings);
+        expect(queueManager.consumers[0].config).toEqual(_.merge({
+            OVERWRITE_EXISTING_IF_DIFFERENT: true,
+            OVERWRITE: false,
+            S3_UPLOAD_OPTIONS_STORAGE_CLASS: 'STANDARD',
+            S3_UPLOAD_OPTIONS_PART_SIZE: 10485760,
+            S3_UPLOAD_ACL: 'bucket-owner-full-control'
+
+        }, s3ConsumerSettings.consumerConfig));
+        console.debug(queueManager.consumers[0].config);
+
+    });
 
     test('1x1.gif uploads', async () => {
         // Make sure we are only processing a single 1x1.gif
@@ -340,48 +355,45 @@ describe('S3 uploading consumer works', () => {
         // AWS_S3_BUCKET_FOLDER_TESTING=testing
 
 
-
         queueEntry.basePath = dirTreeResponse.path;
 
         let queueManager = new QueueManager(s3ConsumerSettings);
         queueManager.start();
         let entryResult = await queueManager.addToQueue(queueEntry); // NB: This doesn't resolve if the queueManger isn't started already
 
-        let key = s3ConsumerSettings.consumerInfo.AWS_S3_BUCKET_FOLDER + "/1x1.gif";
+
         expect(entryResult).toEqual({
             localFilePath: expect.any(String),
             data: {
-                Bucket: s3ConsumerSettings.consumerInfo.AWS_S3_BUCKET,
-                Key: "testing/1x1.gif",
+                Bucket: s3ConsumerSettings.consumerConfig.AWS_S3_BUCKET,
+                Key,
+                Location,
                 ETag: expect.any(String), // e.g "d41d8cd98f00b204e9800998ecf8427e"
-                Location: `https://${s3ConsumerSettings.consumerInfo.AWS_S3_BUCKET}.s3.${s3ConsumerSettings.consumerInfo.AWS_REGION}.amazonaws.com/${key}`,
                 ServerSideEncryption: expect.any(String), // If you have it enabled it's likely AES256
-                key,
             },
             uploadProcessingTime: expect.any(Number), // e.g 4123
             treeEntry: expect.anything(),
         });
 
         await queueManager.drained(); // Want to see the consumers status be set to idle
-        console.log('Uploaded the 1x1.gif activity: ', queueManager.consumers[0].activity);
+        console.log('Uploaded the 1x1.gif activity: ', queueManager.consumers[0].getActivity());
 
     });
 
-    // test('same 1x1.gif doesn\'t get overridden' , async () => {
+    // test('same 1x1.gif doesn\'t get overridden', async () => {
     //
-    //     let s3ConsumerSettingsDontOverwrite = _.merge({} , s3ConsumerSettings, {consumerInfo: {OVERWRITE_FILE: false}});
+    //     let s3ConsumerSettingsDontOverwrite = _.merge({}, s3ConsumerSettings, {consumerInfo: {OVERWRITE_FILE: false}});
     //     let queueManager = new QueueManager(s3ConsumerSettingsDontOverwrite);
     //     queueManager.start();
     //     let entryResult = await queueManager.addToQueue(queueEntry); // NB: This doesn't resolve if the queueManger isn't started already
     //     expect(entryResult).toEqual({
     //         localFilePath: expect.any(String),
     //         data: {
-    //             Bucket: s3ConsumerSettings.consumerInfo.AWS_S3_BUCKET,
-    //             Key: "testing/1x1.gif",
+    //             Bucket: s3ConsumerSettings.consumerConfig.AWS_S3_BUCKET,
+    //             Key,
+    //             Location,
     //             ETag: expect.any(String), // e.g "d41d8cd98f00b204e9800998ecf8427e"
-    //             Location: `https://${s3ConsumerSettings.consumerInfo.AWS_S3_BUCKET}.s3.${s3ConsumerSettings.consumerInfo.AWS_REGION}.amazonaws.com/${key}`,
     //             ServerSideEncryption: expect.any(String), // If you have it enabled it's likely AES256
-    //             key,
     //         },
     //         uploadProcessingTime: expect.any(Number), // e.g 4123
     //         treeEntry: expect.anything(),

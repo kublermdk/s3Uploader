@@ -67,7 +67,7 @@ class QueueManager extends QueueAndConsumerBase {
     options = {
         consumerCount: 2,
         consumerClass: null, // Required
-        consumerInfo: {},
+        consumerConfig: {},
         drainedCheckingTime: 200, // in miliseconds, you can lower it for short run processes if you want
         removeConsumerTime: 100, // in miliseconds, you can lower it when using short run processes if you want
     }
@@ -177,7 +177,7 @@ class QueueManager extends QueueAndConsumerBase {
         let ident = 'consumer-' + this.consumersCreated;
         this.consumers.push(new this.options.consumerClass(
             this,
-            this.options.consumerInfo,
+            this.options.consumerConfig,
             _.merge({}, this.settings, {ident: ident})));
         this.addActivity(`Added consumer ${ident} of ${this.options.consumerCount}`);
     }
