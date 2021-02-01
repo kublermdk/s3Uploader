@@ -41,7 +41,7 @@ class QueueConsumerS3 extends QueueConsumerBase {
         S3_UPLOAD_STORAGE_CLASS: 'STANDARD', // The S3 upload StorageClass Possible values include: "STANDARD" "REDUCED_REDUNDANCY" "GLACIER" "STANDARD_IA" "ONEZONE_IA" "INTELLIGENT_TIERING" "DEEP_ARCHIVE" "OUTPOSTS" as per https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/S3.html#upload-property
         S3_UPLOAD_OPTIONS_PART_SIZE: 10 * 1024 * 1024, // Default of 10MB or fine for files up to 100GB shouldn't be less than 5MB as per https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/S3.html#upload-property but can't be more than 10,000 chunks so we adjust it for larger files
         S3_UPLOAD_OPTIONS_QUEUE_SIZE: 4, // The default number of threads to upload each part, as per https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/S3/ManagedUpload.html
-        S3_UPLOAD_OPTIONS_TAGS: [], // e.g [{Key: 'tag1', Value: 'value1'}]
+        S3_UPLOAD_OPTIONS_TAGS: [], // e.g [{Key: 'tag1', Value: 'value1'}] this is expected to be an array
         S3_UPLOAD_ACL: 'bucket-owner-full-control' // The canned ACL to apply to the upload. Possible values include: "private" "public-read" "public-read-write" "authenticated-read" "aws-exec-read" "bucket-owner-read" "bucket-owner-full-control"
     }
 
@@ -61,58 +61,38 @@ class QueueConsumerS3 extends QueueConsumerBase {
             let s3ObjectTaggingPromise = new DeferredPromise();
             let fsStatPromise = fsPromises.stat(localFilePath);
 
-            fsStatPromise.then(fsStatResponse => {
-                // fsStat = fsStatResponse;
-                // this.addActivity(`The fsStat for ${localFilePath} is: `, fsStatResponse);
-
-
-                // Example fsStat:
-                // {
-                //     dev: 1733172691,
-                //     mode: 33206,
-                //     nlink: 1,
-                //     uid: 0,
-                //     gid: 0,
-                //     rdev: 0,
-                //     blksize: 4096,
-                //     ino: 50665495808138510,
-                //     size: 43,
-                //     blocks: 0,
-                //     atimeMs: 1612086167975.0261,
-                //     mtimeMs: 1610160450289.9504,
-                //     ctimeMs: 1610160450289.9504,
-                //     birthtimeMs: 1610160449423.793,
-                //     atime: 2021-01-31T09:42:47.975Z,
-                //     mtime: 2021-01-09T02:47:30.290Z,
-                //     ctime: 2021-01-09T02:47:30.290Z,
-                //     birthtime: 2021-01-09T02:47:29.424Z
-                // }
-                return fsStatResponse;
-                // fsStatPromise.resolve(fsStatResponse);
-            }).catch(err => {
-                this.addError(err, `invalid local file ${localFilePath} s3 uploader can't upload it`);
+            // Example fsStat:
+            // {
+            //     dev: 1733172691,
+            //     mode: 33206,
+            //     nlink: 1,
+            //     uid: 0,
+            //     gid: 0,
+            //     rdev: 0,
+            //     blksize: 4096,
+            //     ino: 50665495808138510,
+            //     size: 43,
+            //     blocks: 0,
+            //     atimeMs: 1612086167975.0261,
+            //     mtimeMs: 1610160450289.9504,
+            //     ctimeMs: 1610160450289.9504,
+            //     birthtimeMs: 1610160449423.793,
+            //     atime: 2021-01-31T09:42:47.975Z,
+            //     mtime: 2021-01-09T02:47:30.290Z,
+            //     ctime: 2021-01-09T02:47:30.290Z,
+            //     birthtime: 2021-01-09T02:47:29.424Z
+            // }
+            fsStatPromise.catch(err => {
+                this.addError(err, `invalid local file '${localFilePath} 's3 uploader can't upload it`);
                 reject(err);
             });
-            //
-            // try {
-            //     fsStat = ;
-            //     // console.log('fsStat: ', fsStat);
-            // } catch (err) {
-            //     this.addError(err, `invalid local file ${localFilePath} s3 uploader can't upload it`);
-            //     throw err;
-            //     // return err;
-            // }
-
-            // if (!fsStat || !fsStat.size) {
-            //     this.addError(fsStat, `invalid local file ${localFilePath} s3 uploader can't upload it`);
-            //     throw new Error(`invalid local file ${localFilePath} no fsStat or empty file s3 uploader can't upload it`);
-            // }
 
 
             // -- This could take a few moments to sha a full file
             sha256File(localFilePath, (err, sha256) => {
                 if (err) {
                     this.addError(err, `Error getting the SHA256 for the file ${localFilePath}`, err);
+                    reject(err);
                 }
                 sha256FilePromise.resolve(sha256);
             });
@@ -146,8 +126,7 @@ class QueueConsumerS3 extends QueueConsumerBase {
                 if (err) {
                     // e.g NoSuchKey: The specified key does not exist.
                     this.addError(err, `S3 getObjectTagging for ${uploadLocationKey}`);
-                    // s3ObjectTaggingPromise.reject(err);
-                    s3ObjectTaggingPromise.resolve({TagSet: []}); // It's OK if the file doesn't exist
+                    s3ObjectTaggingPromise.resolve({TagSet: []}); // It's OK if the file doesn't exist... We might miss other important errors like network outages, but this is only to check for the SHA256 hash as a tag, it's partly optional
                     /* Example err:
 
                       An error occurred: S3 listObjectsV2 for testing/1x1.gif
@@ -173,7 +152,6 @@ class QueueConsumerS3 extends QueueConsumerBase {
                       retryDelay: 5.867163526294195
                      */
                 } else {
-                    // this.addActivity(`The getObjectTagging results for ${uploadLocationKey} `, tags);
                     s3ObjectTaggingPromise.resolve(tags);
                 }
             });
@@ -185,20 +163,16 @@ class QueueConsumerS3 extends QueueConsumerBase {
                 }, (err, listObjects) => {
                     if (err) {
                         this.addError(err, `S3 listObjectsV2 for ${uploadLocationKey}`);
-                        s3ListObjectPromise.reject(err);
-                        // throw new Error(err);
+                        reject(err);
                     } else {
-                        // Example data: {"IsTruncated":false,"Contents":[
-                        // {
+                        // Example data: {"IsTruncated":false,"Contents":[ {
                         //  "Key":"testing/1x1.gif",
                         //  "LastModified":"2021-01-31T06:44:53.000Z",
                         //  "ETag":"\\"d41d8cd98f00b204e9999999fff8427e\\"",
                         //  "Size":0,
                         //  "StorageClass":"STANDARD"
-                        // }
-                        // ],"Name":"bucket-location","Prefix":"testing/1x1.gif","MaxKeys":1,"CommonPrefixes":[],"KeyCount":1}
+                        // } ],"Name":"bucket-location","Prefix":"testing/1x1.gif","MaxKeys":1,"CommonPrefixes":[],"KeyCount":1}
                         // NB: If the file doesn't already exist then the Contents is an empty array and KeyCount is 0. e.g  {"IsTruncated":false,"Contents":[],"Name":"testing-s3uploader","Prefix":"testing/1x1.gif","MaxKeys":2,"CommonPrefixes":[],"KeyCount":0}
-                        // this.addActivity(`S3 listObjectsV2 data for ${uploadLocationKey} is: `, listObjects);
                         s3ListObjectPromise.resolve(listObjects);
                     }
                 }
@@ -210,38 +184,39 @@ class QueueConsumerS3 extends QueueConsumerBase {
                 let sha256OfLocalFile = resolved[1];
                 let s3ListObject = resolved[2];
                 let s3ObjectTags = resolved[3];
-
                 // console.log({fsStat, sha256OfLocalFile, s3ListObject, s3ObjectTags});
-                // console.log('s3ObjectTags: ', JSON.stringify(s3ObjectTags));
-                // console.log({resolved});
 
                 // -- Overwrite file?
                 if (false === await this.shouldUploadFile(s3ListObject, fsStat, sha256OfLocalFile, s3ObjectTags)) {
-                    reject(`shouldReplaceExistingFile is false, so not replacing ${localFilePath}`);
-                    // return {shouldUploadFile: false, treeEntry, s3ListObject, fsStat, sha256OfLocalFile, s3ObjectTags};
+                    // Nope, don't overwrite it
+                    resolve({
+                        uploaded: false,
+                        shouldUploadFile: false,
+                        localFilePath,
+                        treeEntry,
+                    });
                 }
 
-                // -- Workout settings
+                // -- Workout upload params and options
                 let uploadParams = _.merge({
                     Bucket: s3BucketName,
                     Key: uploadLocationKey,
                     Body: '', // To be set to the stream later on
                     ACL: this.config.S3_UPLOAD_ACL,
                     StorageClass: this.config.S3_UPLOAD_STORAGE_CLASS,
+                    // NB: We allow the treeEntry to contain a specific s3UploadParams if you really want to do something special like setting a WebsiteRedirectLocation or SSECustomerKeyMD5 which would be per file specific. Probably best sorted out in the preProcessEntry
                 }, _.get(treeEntry, 's3UploadParams', {}));
 
                 let uploadOptions = _.merge({
-                    // We allow the treeEntry to contain a specific s3UploadParams if you really want to do something special like setting a WebsiteRedirectLocation or SSECustomerKeyMD5 which would be per file specific
                     // Check https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/S3.html#upload-property for more options and
-
                     // For info on how it does automatic chunking checkout https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/S3/ManagedUpload.html
-                    // You might want to set your own s3UploadOptions to get your own tags
+                    // You might want to set your own s3UploadOptions per file for adding your own tags, but likely you'll want to set the config for the queue size or something similar
                     partSize: this.workOutS3PartSize(fsStat), // if the file is such that it'll be split into more than 10k parts with the S3_UPLOAD_OPTIONS_PART_SIZE then we select a new part size
                     queueSize: this.config.S3_UPLOAD_OPTIONS_QUEUE_SIZE,
                     tags: this.config.S3_UPLOAD_OPTIONS_TAGS.concat([{
                         Key: 's3UploaderSHA256',
                         Value: sha256OfLocalFile
-                    }])
+                    }]),
                 }, _.get(treeEntry, 's3UploadOptions', {}));
 
 
@@ -259,11 +234,6 @@ class QueueConsumerS3 extends QueueConsumerBase {
                     this.addError(err, 'file streaming error when uploading to S3');
                     reject(err);
                 });
-                // console.debug("Uploading the file: ", {
-                //     filePath: localFilePath,
-                //     awsRegion: process.env.AWS_REGION,
-                //     uploadParams
-                // });
 
 
                 // ===============================================================
@@ -284,6 +254,7 @@ class QueueConsumerS3 extends QueueConsumerBase {
                         }));
                         // console.log("S3 Upload Success", data.Location);
                         resolve({
+                            uploaded: true,
                             uploadOptions,
                             localFilePath,
                             data,
@@ -303,6 +274,7 @@ class QueueConsumerS3 extends QueueConsumerBase {
 
             }).catch(err => {
                 this.addError(err, 'whilst getting all the promises to resolve for file stat, listing the object and tags, etc..');
+                reject(err);
             });
         });
     }

@@ -257,13 +257,8 @@ describe('Processing Queue', () => {
 
     test('runs if queue is added after start', async () => {
         let queueManager = new QueueManager(queueManagerSettingsDefault);
-        // let queueManager = new QueueManager(queueManagerSettingsOne);
-
-        let dateStarted = new Date();
         queueManager.start();
         queueManager.addToQueue({name: "test 1"});
-        // queueManager.addToQueue({name: "test 2"});
-        // queueManager.addToQueue({name: "test 3"});
 
         expect(queueManager.getStatistics()).toEqual({
             "consumerCount": expect.any(Number),
@@ -273,13 +268,8 @@ describe('Processing Queue', () => {
 
         let hasDrained = await queueManager.drained();
         expect(hasDrained).toEqual(true);
-        // console.log("Drained in ", new Date().getTime() - dateStarted.getTime() + ' ms');
-        await queueManager.addToQueue({name: "test 2"});
-
-        // console.log("Drained again in total ", new Date().getTime() - dateStarted.getTime() + ' ms');
-        // console.log("Stats: ", queueManager.getStatistics());
-        // console.log("Consumers: ", queueManager.getStatistics(true).consumers);
-
+        let queueProcessResult = await queueManager.addToQueue({name: "test 2"});
+        // expect(queueProcessResult).toEqual({});
 
     });
 
@@ -291,7 +281,6 @@ describe('Processing Queue', () => {
         consumers.splice(2, 1); // Remove what is now 3 (at index 2 or the 3rd entry along)
         expect(consumers.length).toEqual(6);
         expect(consumers).toEqual([1, 2, 4, 5, 6, 7]);
-        // console.log(consumers);
 
     })
 
@@ -301,7 +290,6 @@ describe('Processing Queue', () => {
 
         let dateStartRemoving = new Date();
         let removeConsumerNotStarted = await queueManager.removeConsumer();
-        // console.log("Removing a consumer took ", new Date().getTime() - dateStartRemoving.getTime() + 'ms');
         await waitImmediate();
         expect(queueManager.consumers.length).toEqual(1);
         expect(removeConsumerNotStarted).toEqual(0); // It will see and remove the first entry which is the index number it returns
@@ -309,11 +297,9 @@ describe('Processing Queue', () => {
         queueManager.addConsumer();
         queueManager.addConsumer();
         expect(queueManager.consumers.length).toEqual(3);
-        // console.log('There should be 3 consumers created', queueManager.getStatistics(true));
         let removeConsumerIndex = await queueManager.removeConsumer();
 
         expect(removeConsumerIndex).toEqual(0); // Not started, so again it'll be at index 0 that it's removed
-        // console.log('There should be 2 consumers left', queueManager.getStatistics(true));
         expect(queueManager.consumers.length).toEqual(2);
         expect(queueManager.consumersCreated).toEqual(4);
 
@@ -324,7 +310,7 @@ describe('Processing Queue', () => {
         let queueManager = new QueueManager(queueManagerSettingsDefault);
         queueManager.start();
         queueManager.addToQueue({message: 'Initial Test 1'});
-        let processedQueue2 = await queueManager.addToQueue({message: 'Initial Test 2'});
+        await queueManager.addToQueue({message: 'Initial Test 2'});
         _.each(_.range(0, 3), (index) => {
             queueManager.addToQueue({message: 'Test message ' + index});
         });
@@ -334,7 +320,6 @@ describe('Processing Queue', () => {
         expect(queueManager.findIdleConsumerIndex()).toEqual(-1);
 
         let removeConsumerIndex = await queueManager.removeConsumer();
-        // console.log("Removed consumer at index: ", removeConsumerIndex);
         expect(removeConsumerIndex).toBeGreaterThanOrEqual(0);
         expect(queueManager.consumers.length).toEqual(1);
 
@@ -351,8 +336,6 @@ describe('Dir Tree', () => {
     // e.g {"path":"C:/s3uploader/tests/resources","name":"resources","mode":16822,"mtime":"2021-01-28T14:38:38.045Z","mtimeMs":1611844718044.9944,"children":[{"path":"C:/s3uploader/tests/resources/1x1.gif","name":"1x1.gif","size":43,"extension":".gif","type":"file","mode":33206,"mtime":"2021-01-09T02:47:30.290Z","mtimeMs":1610160450289.9504}],"size":43,"type":"directory"}
 
     test('works', () => {
-        // console.log("localResourcesFolder: ", localResourcesFolder);
-        // console.log("dirTreeResponse: ", JSON.stringify(dirTreeResponse));
 
         expect(localResourcesFolder).toMatch(/resources$/);
         expect(dirTreeResponse).toBeDefined();
@@ -366,6 +349,7 @@ describe('Dir Tree', () => {
                 "children":
                     [
                         {
+                            basePath: expect.any(String), // Inserted by our own code, not by dirTree
                             "path": expect.any(String),
                             "name": "1x1.gif",
                             "size": 43,
@@ -386,6 +370,8 @@ describe('Dir Tree', () => {
 // ====================================================================================
 describe('S3 uploading consumer', () => {
 
+
+    // @todo: Convert this into a beforeAll() method.
     let s3ConsumerSettings = {
         consumerCount: 1,
         consumerClass: QueueConsumerS3, // The s3 queue Consumer
@@ -406,7 +392,6 @@ describe('S3 uploading consumer', () => {
     queueEntry.basePath = dirTreeResponse.path;
     const Key = s3ConsumerSettings.consumerConfig.AWS_S3_BUCKET_FOLDER + "/1x1.gif";
     const Location = `https://${s3ConsumerSettings.consumerConfig.AWS_S3_BUCKET}.s3.${s3ConsumerSettings.consumerConfig.AWS_REGION}.amazonaws.com/${Key}`;
-
 
     test('default configuration gets applied', () => {
         expect(queueManager.consumers[0].config).toEqual(_.merge({}, s3ConsumerSettings.consumerConfig, queueManager.consumers[0].defaultConfig));
@@ -505,7 +490,6 @@ describe('S3 uploading consumer', () => {
         test('Not SHA and not newly modified', async () => {
             await expect(queueManager.consumers[0].shouldUploadFile(s3ListObject, fsStatSameSize, sha256OfLocalFile, s3ObjectNoTags)).resolves.toEqual(false);
             expect(_.last(queueManager.consumers[0].activity).message).toEqual('shouldUploadFile() OVERWRITE_EXISTING_IF_DIFFERENT is true but there\'s no SHA but the s3 file is up to date with local according to the modified timestamp');
-            console.log(_.last(queueManager.consumers[0].activity));
         });
 
         test('Not SHA but is newly modified', async () => {
@@ -542,7 +526,6 @@ describe('S3 uploading consumer', () => {
         // AWS_S3_BUCKET_TESTING=testing-s3uploader
         // AWS_S3_BUCKET_FOLDER_TESTING=testing
 
-
         // -- We want to ensure the file is overwritten even if it exists
         let s3ConsumerSettingsOverwriteTrue = _.merge({}, s3ConsumerSettings, {consumerConfig: {OVERWRITE: true}});
         expect(s3ConsumerSettingsOverwriteTrue.consumerConfig.OVERWRITE).toEqual(true);
@@ -557,9 +540,9 @@ describe('S3 uploading consumer', () => {
         }); // NB: This doesn't resolve if the queueManger isn't started already
 
         await queueManager.drained();
-        console.log('Uploaded the 1x1.gif activity: ', queueManager.consumers[0].activity);
 
         expect(entryResult).toEqual({
+            uploaded: true,
             localFilePath: expect.any(String),
             data: {
                 Bucket: s3ConsumerSettings.consumerConfig.AWS_S3_BUCKET,
@@ -584,7 +567,6 @@ describe('S3 uploading consumer', () => {
         });
 
         await queueManager.drained(); // Want to see the consumers status be set to idle
-        // console.log('Uploaded the 1x1.gif activity: ', queueManager.consumers[0].getActivity());
 
     });
 
@@ -593,41 +575,49 @@ describe('S3 uploading consumer', () => {
         let s3ConsumerSettingsDontOverwrite = _.merge({}, s3ConsumerSettings, {
             consumerInfo: {
                 OVERWRITE: false,
-                OVERWRITE_EXISTING_IF_DIFFERENT: true
+                OVERWRITE_EXISTING_IF_DIFFERENT: true,
             }
         }); // It should be false anyway
+
         expect(s3ConsumerSettingsDontOverwrite.consumerInfo.OVERWRITE).toEqual(false);
         expect(s3ConsumerSettingsDontOverwrite.consumerInfo.OVERWRITE_EXISTING_IF_DIFFERENT).toEqual(true);
-        queueManager = new QueueManager(s3ConsumerSettingsDontOverwrite);
+        queueManager = new QueueManager(s3ConsumerSettingsDontOverwrite, {OUTPUT_ERRORS: false,});
         queueManager.start();
 
-
-        // try {
-        //     let queueProcessed = await queueManager.addToQueue(queueEntry); // NB: This doesn't resolve if the queueManger isn't started already
-        //     console.log('Activity before: ', queueManager.consumers[0].activity);
-        //     await queueManager.drained();
-        //     console.log('queueProcessed: ', queueProcessed);
-        // } catch (err) {
-        //     console.error("UNEXPECTED ERROR DURING QUEUE PROCESSING", err);
-        // }
-        // expect(false).toEqual(true);
-        //
-        // console.log("The dirTreeResponse.path is: ", _.get(dirTreeResponse, 'children.0.path'));
-
-        // ===========---------------------=======================
-
-        // let addToQueuePromise = queueManager.addToQueue(queueEntry); // NB: This doesn't resolve if the queueManger isn't started already
-        // console.log('Activity before: ', queueManager.consumers[0].activity);
-        // await queueManager.drained();
-
-        return expect(queueManager.addToQueue(queueEntry)).rejects.toEqual({
-            "mainError": "shouldReplaceExistingFile is false, so not replacing " + path.join(_.get(dirTreeResponse, 'children.0.path'))
+        await expect(queueManager.addToQueue(queueEntry)).resolves.toEqual({
+            uploaded: false,
+            shouldUploadFile: false,
+            localFilePath: expect.any(String),
+            treeEntry: expect.any(Object),
         });
+    });
 
-        // addToQueuePromise.catch(err => {
-        //     console.error("The rejrected error is: ", err);
+
+    test('invalid file fails', async () => {
+
+        let s3ConsumerSettingsDontOverwrite = _.merge({}, s3ConsumerSettings, {
+            consumerInfo: {
+                OVERWRITE: false,
+                OVERWRITE_EXISTING_IF_DIFFERENT: true,
+                OUTPUT_ERRORS: false,
+            }
+        });
+        let invalidQueueEntry = _.merge({}, queueEntry, {
+            path: path.join(__dirname, '123456789 this is an invalid_file.notAtxt'),
+            "name": '123456789 this is an invalid_file.notAtxt'
+        });
+        queueManager = new QueueManager(s3ConsumerSettingsDontOverwrite, {OUTPUT_ERRORS: false,});
+        queueManager.start();
+        return expect(queueManager.addToQueue(invalidQueueEntry)).rejects.toEqual({
+            "mainError": expect.anything()
+        });
+        // e.g
+        // Error({
+        //     "code": "ENOENT",
+        //     "errno": -4058,
+        //     "path": invalidQueueEntry.path,
+        //     "syscall": "stat",
         // })
-        // console.log('Activity AFTER: ', queueManager.consumers[0].activity);
 
 
     });

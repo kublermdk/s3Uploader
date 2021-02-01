@@ -74,7 +74,10 @@ class QueueAndConsumerBase {
         }
         this.errors.push({error, contextMessage});
         this.addActivity(`Error! ${contextMessage}`, error);
-        console.error(`An error occurred: ${contextMessage}: `, error);
+
+        if (true === _.get(this.settings, 'OUTPUT_ERRORS', true)) {
+            console.error(`An error occurred: ${contextMessage}: `, error);
+        }
         this.setStatus(this.statuses.errored);
     }
 
@@ -87,6 +90,9 @@ class QueueAndConsumerBase {
         if (this.settings.activityLength > 0 && this.activity.length > this.settings.activityLength) {
             this.activity.shift(); // Remove an item from the start of the array
             // @todo: Workout if we need to remove multiple entries from the array. e.g this.activity.slice(this.settings.activityLength, this.settings.activityLength - this.activity.length);
+        }
+        if (true === _.get(this.settings, 'OUTPUT_ACTIVITY_LOGS', false)) {
+            console.log(message, data);
         }
         return this.activity.length;
     }

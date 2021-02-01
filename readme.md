@@ -70,6 +70,19 @@ If neither FILE_EXTENSIONS nor MIME_TYPES are specified then all file types are 
 `DELETE_ON_UPLOAD` if true will delete the local file after it's been uploaded (done in the post processing method of the queueConsumer)
 
 
+`OVERWRITE_EXISTING_IF_DIFFERENT=true` Will overwrite files if true (defaults to true) and:
+
+1. There's already a file there to overwrite (if there's nothing there it'll definitely upload the file)
+2. The file size is different
+3. There's SHA tags of the existing file (the s3UploaderSHA256 tag added automatically to files it uploads) and the SHA256 is different to that of the local file
+4. If there's no SHA tag then if the local file is modified more recently than what's on S3 it'll overwrite
+
+`OVERWRITE=false` if True the uploader will replace any existing files even if they are the same.
+
+`OUTPUT_ACTIVITY_LOGS=false` If true then it'll console.log the output as things are running. Useful for logging but defaults to false so you don't get overwhelmed
+
+`OUTPUT_ERRORS=true` output error defaults to true and will console.error() when something goes wrong. Can be set to false if you don't want any output 
+
 
 Resources:
 

@@ -148,7 +148,7 @@ class QueueConsumerBase extends QueueAndConsumerBase {
 
         // -- Resolve the queue task promise
         if (queueEntry['__completedQueueTaskPromise']) {
-            if (error) {
+            if (!_.isEmpty(error)) {
                 queueEntry['__completedQueueTaskPromise'].reject(error);
             } else {
                 queueEntry['__completedQueueTaskPromise'].resolve(processedQueueResponse);
@@ -188,6 +188,11 @@ class QueueConsumerBase extends QueueAndConsumerBase {
     processQueueEntry = (queueEntry, error) => {
         // A very basic example which waits a bit before returning
         return new Promise((resolve, reject) => {
+            if (!_.isEmpty(error)) {
+                // Don't process if there was an error with the Pre Processing
+                queueEntry.processed = false;
+                resolve(queueEntry);
+            }
             setTimeout(() => {
                 queueEntry.processed = true;
                 resolve(queueEntry);
@@ -202,9 +207,14 @@ class QueueConsumerBase extends QueueAndConsumerBase {
      * This is provided both the original queueEntry and the processQueueResponse (the response from the processQueueEntry)
      * @param queueEntry
      * @param processQueueResponse
+     * @param error {Object} e.g {mainError: "File already exists, so not uploading"}
      * @returns {Promise<void>}
      */
     postProcessEntry = async (queueEntry, processQueueResponse, error) => {
+        if (!_.isEmpty(error)) {
+            // There was a pre or main processing error
+            // You likely don't want to do anything important like deleting files if that's the case
+        }
         return queueEntry;
     }
 }
