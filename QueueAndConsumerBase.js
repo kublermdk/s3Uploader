@@ -23,7 +23,7 @@ class QueueAndConsumerBase {
      */
     settings = {
         ident: Math.random() * 1000, // Probably best replaced with the array index number
-        activityLength: 100
+        activityLength: 5000
     };
     startedAt;
 
@@ -74,7 +74,7 @@ class QueueAndConsumerBase {
         }
         this.errors.push({error, contextMessage});
         this.addActivity(`Error! ${contextMessage}`, error);
-        console.error(`An error occurred: ${contextMessage}`, error);
+        console.error(`An error occurred: ${contextMessage}: `, error);
         this.setStatus(this.statuses.errored);
     }
 
@@ -84,12 +84,10 @@ class QueueAndConsumerBase {
             return 0;
         }
         this.activity.push({message, data, date: new Date()});
-
-
         if (this.settings.activityLength > 0 && this.activity.length > this.settings.activityLength) {
-            this.activity.shift(); // Remove an item from the start of the array. = this.activity.slice(0, this.settings.activityLength);
+            this.activity.shift(); // Remove an item from the start of the array
+            // @todo: Workout if we need to remove multiple entries from the array. e.g this.activity.slice(this.settings.activityLength, this.settings.activityLength - this.activity.length);
         }
-
         return this.activity.length;
     }
 

@@ -47,259 +47,341 @@ class QueueConsumerS3 extends QueueConsumerBase {
 
     processQueueEntry = async (treeEntry) => {
 
-        // return new Promise((resolve, reject) => {
-        const basePath = treeEntry.basePath;
+        return new Promise((resolve, reject) => {
+            const basePath = treeEntry.basePath;
 
-        let s3BucketFolder = this.config.AWS_S3_BUCKET_FOLDER;
-        let s3BucketName = this.config.AWS_S3_BUCKET;
-        let uploadLocationKey = s3BucketFolder + treeEntry.path.replace(basePath, ''); // @todo: remove basePath from treeEntry
-        let localFilePath = path.join(treeEntry.path); // Convert to a local filepath that fs can read
-
-        // Example fsStat:
-        // {
-        //     dev: 1733172691,
-        //     mode: 33206,
-        //     nlink: 1,
-        //     uid: 0,
-        //     gid: 0,
-        //     rdev: 0,
-        //     blksize: 4096,
-        //     ino: 50665495808138510,
-        //     size: 43,
-        //     blocks: 0,
-        //     atimeMs: 1612086167975.0261,
-        //     mtimeMs: 1610160450289.9504,
-        //     ctimeMs: 1610160450289.9504,
-        //     birthtimeMs: 1610160449423.793,
-        //     atime: 2021-01-31T09:42:47.975Z,
-        //     mtime: 2021-01-09T02:47:30.290Z,
-        //     ctime: 2021-01-09T02:47:30.290Z,
-        //     birthtime: 2021-01-09T02:47:29.424Z
-        // }
-        let fsStat;
-        try {
-            fsStat = fs.statSync(localFilePath);
-            console.log(fsStat);
-        } catch (err) {
-            this.addError(err, `invalid local file ${localFilePath} s3 uploader can't upload it`);
-            throw err;
-            // return err;
-        }
-
-        if (!fsStat || !fsStat.size) {
-            this.addError(fsStat, `invalid local file ${localFilePath} s3 uploader can't upload it`);
-            throw new Error(`invalid local file ${localFilePath} no fsStat or empty file s3 uploader can't upload it`);
-        }
-
-        let s3ListObjectPromise = new DeferredPromise();
-        let sha256FilePromise = new DeferredPromise();
-
-        let fileSize = fsStat.size; // In Bytes
-        let localFileSha256;
-        let s3ListObject;
-
-        // This could take a few moments to sha a full file
-        sha256File(localFilePath, (err, sha256) => {
-            if (err) {
-                this.addError(err, `Error getting the SHA256 for the file ${localFilePath}`, err);
-            }
-            localFileSha256 = sha256;
-            sha256FilePromise.resolve(sha256);
-        });
-
-        let uploadParams = _.merge({
-            Bucket: s3BucketName,
-            Key: uploadLocationKey,
-            Body: '', // To be set to the stream later on
-            ACL: this.config.S3_UPLOAD_ACL,
-            StorageClass: this.config.S3_UPLOAD_STORAGE_CLASS,
-        }, _.get(treeEntry, 's3UploadParams', {}));
-
-        let uploadOptions = _.merge({
-            // We allow the treeEntry to contain a specific s3UploadParams if you really want to do something special like setting a WebsiteRedirectLocation or SSECustomerKeyMD5 which would be per file specific
-            // Check https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/S3.html#upload-property for more options and
-
-            partSize: this.config.S3_UPLOAD_OPTIONS_PART_SIZE, // if the file is such that it'll be split into more than 10k parts with the S3_UPLOAD_OPTIONS_PART_SIZE then we select a new part size
-            queueSize: this.config.S3_UPLOAD_OPTIONS_QUEUE_SIZE,
-            tags: this.config.S3_UPLOAD_OPTIONS_TAGS,
-        }, _.get(treeEntry, 's3UploadOptions', {}));
+            let s3BucketFolder = this.config.AWS_S3_BUCKET_FOLDER;
+            let s3BucketName = this.config.AWS_S3_BUCKET;
+            let uploadLocationKey = s3BucketFolder + treeEntry.path.replace(basePath, ''); // @todo: remove basePath from treeEntry
+            let localFilePath = path.join(treeEntry.path); // Convert to a local filepath that fs can read
 
 
-        sha256FilePromise.then(sha256 => {
-            uploadOptions.tags.push({Key: 's3UploaderSHA256', Value: sha256});
+            let sha256FilePromise = new DeferredPromise();
+            let s3ListObjectPromise = new DeferredPromise();
+            let s3ObjectTaggingPromise = new DeferredPromise();
+            let fsStatPromise = fsPromises.stat(localFilePath);
+
+            fsStatPromise.then(fsStatResponse => {
+                // fsStat = fsStatResponse;
+                // this.addActivity(`The fsStat for ${localFilePath} is: `, fsStatResponse);
 
 
-        });
-        // For info on how it does automatic chunking checkout https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/S3/ManagedUpload.html
-        // You might want to set your own s3UploadOptions to get your own tags
+                // Example fsStat:
+                // {
+                //     dev: 1733172691,
+                //     mode: 33206,
+                //     nlink: 1,
+                //     uid: 0,
+                //     gid: 0,
+                //     rdev: 0,
+                //     blksize: 4096,
+                //     ino: 50665495808138510,
+                //     size: 43,
+                //     blocks: 0,
+                //     atimeMs: 1612086167975.0261,
+                //     mtimeMs: 1610160450289.9504,
+                //     ctimeMs: 1610160450289.9504,
+                //     birthtimeMs: 1610160449423.793,
+                //     atime: 2021-01-31T09:42:47.975Z,
+                //     mtime: 2021-01-09T02:47:30.290Z,
+                //     ctime: 2021-01-09T02:47:30.290Z,
+                //     birthtime: 2021-01-09T02:47:29.424Z
+                // }
+                return fsStatResponse;
+                // fsStatPromise.resolve(fsStatResponse);
+            }).catch(err => {
+                this.addError(err, `invalid local file ${localFilePath} s3 uploader can't upload it`);
+                reject(err);
+            });
+            //
+            // try {
+            //     fsStat = ;
+            //     // console.log('fsStat: ', fsStat);
+            // } catch (err) {
+            //     this.addError(err, `invalid local file ${localFilePath} s3 uploader can't upload it`);
+            //     throw err;
+            //     // return err;
+            // }
+
+            // if (!fsStat || !fsStat.size) {
+            //     this.addError(fsStat, `invalid local file ${localFilePath} s3 uploader can't upload it`);
+            //     throw new Error(`invalid local file ${localFilePath} no fsStat or empty file s3 uploader can't upload it`);
+            // }
 
 
-        // resolve({uploadParams});
-
-
-        this.addActivity(`Processing S3 entry ${uploadLocationKey}`, {
-            localFilePath,
-            uploadParams,
-            treeEntry,
-            fsStats: fsStat
-        });
-        // console.debug("Uploading file to S3: ", {
-        //     uploadParams,
-        //     uploadLocationKey,
-        //     basePath,
-        //     s3BucketFolder,
-        //     treeEntry,
-        //     filePath: localFilePath
-        // });
-        //
-        // // return uploadLocationKey;
-
-        // resolve({
-        //     localFilePath,
-        //     uploadParams,
-        //     treeEntry
-        // });
-
-        // -- Create S3 service object
-        let s3;
-        if (this.config.s3) {
-            s3 = this.config.s3;
-        } else {
-            this.addActivity("Creating the S3 entry");
-            AWS.config.update({region: this.config.AWS_REGION}); // Likely to be 'us-east-2' Ohio
-            s3 = new AWS.S3({apiVersion: '2006-03-01'});
-        }
-
-
-        // ===============================================================
-        //    Check if the file already exists
-        // ===============================================================
-        // Check https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/S3.html#listObjectsV2-property for the listObjectsV2 SDK
-
-
-        s3.listObjectsV2({Bucket: s3BucketName, Prefix: uploadLocationKey, MaxKeys: 1}, (err, listObjects) => {
+            // -- This could take a few moments to sha a full file
+            sha256File(localFilePath, (err, sha256) => {
                 if (err) {
-                    this.addError(err, `S3 listObjectsV2 for ${uploadLocationKey}`);
-                    s3ListObjectPromise.reject(err);
-                    throw new Error(err);
+                    this.addError(err, `Error getting the SHA256 for the file ${localFilePath}`, err);
+                }
+                sha256FilePromise.resolve(sha256);
+            });
+
+
+            // resolve({
+            //     localFilePath,
+            //     uploadParams,
+            //     treeEntry
+            // });
+
+            // -- Create S3 service object
+            let s3;
+            if (this.config.s3) {
+                s3 = this.config.s3;
+            } else {
+                // this.addActivity("Creating the S3 entry");
+                AWS.config.update({region: this.config.AWS_REGION}); // Likely to be 'us-east-2' Ohio
+                s3 = new AWS.S3({apiVersion: '2006-03-01'});
+            }
+
+
+            // ===============================================================
+            //    Check if the file already exists
+            // ===============================================================
+            // Check https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/S3.html#listObjectsV2-property for the listObjectsV2 SDK
+            s3.getObjectTagging({
+                Bucket: s3BucketName,
+                Key: uploadLocationKey,
+            }, async (err, tags) => {
+                if (err) {
+                    // e.g NoSuchKey: The specified key does not exist.
+                    this.addError(err, `S3 getObjectTagging for ${uploadLocationKey}`);
+                    // s3ObjectTaggingPromise.reject(err);
+                    s3ObjectTaggingPromise.resolve({TagSet: []}); // It's OK if the file doesn't exist
+                    /* Example err:
+
+                      An error occurred: S3 listObjectsV2 for testing/1x1.gif
+                      NoSuchKey: The specified key does not exist.
+                        at Request.extractError (C:\Vagrant\MDKs\greyphoenixproductions\s3uploader\node_modules\aws-sdk\lib\services\s3.js:700:35)
+                        at Request.callListeners (C:\Vagrant\MDKs\greyphoenixproductions\s3uploader\node_modules\aws-sdk\lib\sequential_executor.js:106:20)
+                        at Request.emit (C:\Vagrant\MDKs\greyphoenixproductions\s3uploader\node_modules\aws-sdk\lib\sequential_executor.js:78:10)
+                        at Request.emit (C:\Vagrant\MDKs\greyphoenixproductions\s3uploader\node_modules\aws-sdk\lib\request.js:688:14)
+                        at Request.transition (C:\Vagrant\MDKs\greyphoenixproductions\s3uploader\node_modules\aws-sdk\lib\request.js:22:10)
+                        at AcceptorStateMachine.runTo (C:\Vagrant\MDKs\greyphoenixproductions\s3uploader\node_modules\aws-sdk\lib\state_machine.js:14:12)
+                        at C:\Vagrant\MDKs\greyphoenixproductions\s3uploader\node_modules\aws-sdk\lib\state_machine.js:26:10
+                        at Request.<anonymous> (C:\Vagrant\MDKs\greyphoenixproductions\s3uploader\node_modules\aws-sdk\lib\request.js:38:9)
+                        at Request.<anonymous> (C:\Vagrant\MDKs\greyphoenixproductions\s3uploader\node_modules\aws-sdk\lib\request.js:690:12)
+                        at Request.callListeners (C:\Vagrant\MDKs\greyphoenixproductions\s3uploader\node_modules\aws-sdk\lib\sequential_executor.js:116:18) {
+                      code: 'NoSuchKey',
+                      region: null,
+                      time: 2021-02-01T06:14:12.191Z,
+                      requestId: '2C63F2B6EDD0747E',
+                      extendedRequestId: 'FI4cFX5OllM5fgYuSvzr8WQrAhr1xmPiq9dPU5elihxhmycuorkcYOTU4qvtnAsBNg8gCRa4pVg=',
+                      cfId: undefined,
+                      statusCode: 404,
+                      retryable: false,
+                      retryDelay: 5.867163526294195
+                     */
                 } else {
-                    // Example data: {"IsTruncated":false,"Contents":[
-                    // {
-                    // "Key":"testing/1x1.gif",
-                    // "LastModified":"2021-01-31T06:44:53.000Z",
-                    // "ETag":"\\"d41d8cd98f00b204e9999999fff8427e\\"",
-                    // "Size":0,
-                    // "StorageClass":"STANDARD"
-                    // }
-                    // ],"Name":"bucket-location","Prefix":"testing/1x1.gif","MaxKeys":1,"CommonPrefixes":[],"KeyCount":1}
-                    // NB: If the file doesn't already exist then the Contents is an empty array and KeyCount is 0. e.g  {"IsTruncated":false,"Contents":[],"Name":"testing-s3uploader","Prefix":"testing/1x1.gif","MaxKeys":2,"CommonPrefixes":[],"KeyCount":0}
-                    s3ListObject = listObjects;
-                    // this.addActivity(`S3 listObjectsV2 data for ${uploadLocationKey} is: `, data);
-                    this.addActivity(`S3 listObjectsV2 data for ${uploadLocationKey} is: `, s3ListObject);
+                    // this.addActivity(`The getObjectTagging results for ${uploadLocationKey} `, tags);
+                    s3ObjectTaggingPromise.resolve(tags);
+                }
+            });
 
-                    let fileEntryS3 = _.get(s3ListObject, 'Contents.0');
-                    if (_.get(s3ListObject, 'Contents.length' > 0) && fileEntryS3) {
-                        // File already exists
-                        if (false === this.shouldReplaceExistingFileUpload(fileEntryS3, fsStat)) {
-
-                            throw new Error(`shouldReplaceExistingFile is false, so not replacing ${localFilePath}`);
-                        }
+            s3.listObjectsV2({
+                    Bucket: s3BucketName,
+                    Prefix: uploadLocationKey,
+                    MaxKeys: 1
+                }, (err, listObjects) => {
+                    if (err) {
+                        this.addError(err, `S3 listObjectsV2 for ${uploadLocationKey}`);
+                        s3ListObjectPromise.reject(err);
+                        // throw new Error(err);
+                    } else {
+                        // Example data: {"IsTruncated":false,"Contents":[
+                        // {
+                        //  "Key":"testing/1x1.gif",
+                        //  "LastModified":"2021-01-31T06:44:53.000Z",
+                        //  "ETag":"\\"d41d8cd98f00b204e9999999fff8427e\\"",
+                        //  "Size":0,
+                        //  "StorageClass":"STANDARD"
+                        // }
+                        // ],"Name":"bucket-location","Prefix":"testing/1x1.gif","MaxKeys":1,"CommonPrefixes":[],"KeyCount":1}
+                        // NB: If the file doesn't already exist then the Contents is an empty array and KeyCount is 0. e.g  {"IsTruncated":false,"Contents":[],"Name":"testing-s3uploader","Prefix":"testing/1x1.gif","MaxKeys":2,"CommonPrefixes":[],"KeyCount":0}
+                        // this.addActivity(`S3 listObjectsV2 data for ${uploadLocationKey} is: `, listObjects);
+                        s3ListObjectPromise.resolve(listObjects);
                     }
                 }
-                s3ListObjectPromise.resolve(listObjects);
-            }
-        );
+            );
 
 
-        // this.addActivity("The s3ListObject is: " + JSON.stringify(s3ListObject));
+            Promise.all([fsStatPromise, sha256FilePromise, s3ListObjectPromise, s3ObjectTaggingPromise]).then(async resolved => {
+                let fsStat = resolved[0];
+                let sha256OfLocalFile = resolved[1];
+                let s3ListObject = resolved[2];
+                let s3ObjectTags = resolved[3];
 
-        // // @todo: Check if the file exists before trying to upload it again
-        // // @todo: Check if the file exists before trying to upload it again
-        // // @todo: Check if the file exists before trying to upload it again
-        // // @todo: Check if the file exists before trying to upload it again
-        // //await s3.
-        // // Check OVERWRITE_EXISTING_IF_DIFFERENT
-        //
+                // console.log({fsStat, sha256OfLocalFile, s3ListObject, s3ObjectTags});
+                // console.log('s3ObjectTags: ', JSON.stringify(s3ObjectTags));
+                // console.log({resolved});
 
-        let uploadingStartTime = new Date();
-        this.addActivity(`Uploading file to S3 ${localFilePath}`);
-        let fileStream = fs.createReadStream(localFilePath); // A test pixel that's only 43bytes in size
-        fileStream.on('error', (err) => {
-            this.addError(err);
-            console.error('File Error', err);
-            return err;
-        });
-        // console.debug("Uploading the file: ", {
-        //     filePath: localFilePath,
-        //     awsRegion: process.env.AWS_REGION,
-        //     uploadParams
-        // });
-        // uploadParams.Body = fileStream;
-
-
-        // ===============================================================
-        //    Actually Upload the file
-        // ===============================================================
-        s3.upload(uploadParams, uploadOptions, (err, data) => {
-            if (err) {
-                this.addError(err, 'S3 Upload Error');
-                reject(err);
-            } else if (data) {
-
-                let uploadProcessingTime = new Date().getTime() - uploadingStartTime.getTime(); // in ms
-                this.addActivity("Uploaded file to S3: " + JSON.stringify({
-                    localFilePath,
-                    data,
-                    uploadProcessingTime: uploadProcessingTime + 'ms', // in ms
-                }));
-                // console.log("S3 Upload Success", data.Location);
-                return {
-                    localFilePath,
-                    data,
-                    uploadProcessingTime,
-                    treeEntry,
-                };
-                /* e.g data:  {
-                  ETag: '"958c6ad2c1183fee0bf0dd489f4204c7"',
-                  Location: 'https://bucket-location.s3.us-east-2.amazonaws.com/files/v1-0005.mp4',
-                  key: 'files/v1-0005.mp4',
-                  Key: 'files/v1-0005.mp4',
-                  Bucket: 'bucket-location'
+                // -- Overwrite file?
+                if (false === await this.shouldUploadFile(s3ListObject, fsStat, sha256OfLocalFile, s3ObjectTags)) {
+                    reject(`shouldReplaceExistingFile is false, so not replacing ${localFilePath}`);
+                    // return {shouldUploadFile: false, treeEntry, s3ListObject, fsStat, sha256OfLocalFile, s3ObjectTags};
                 }
-                */
-            }
+
+                // -- Workout settings
+                let uploadParams = _.merge({
+                    Bucket: s3BucketName,
+                    Key: uploadLocationKey,
+                    Body: '', // To be set to the stream later on
+                    ACL: this.config.S3_UPLOAD_ACL,
+                    StorageClass: this.config.S3_UPLOAD_STORAGE_CLASS,
+                }, _.get(treeEntry, 's3UploadParams', {}));
+
+                let uploadOptions = _.merge({
+                    // We allow the treeEntry to contain a specific s3UploadParams if you really want to do something special like setting a WebsiteRedirectLocation or SSECustomerKeyMD5 which would be per file specific
+                    // Check https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/S3.html#upload-property for more options and
+
+                    // For info on how it does automatic chunking checkout https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/S3/ManagedUpload.html
+                    // You might want to set your own s3UploadOptions to get your own tags
+                    partSize: this.workOutS3PartSize(fsStat), // if the file is such that it'll be split into more than 10k parts with the S3_UPLOAD_OPTIONS_PART_SIZE then we select a new part size
+                    queueSize: this.config.S3_UPLOAD_OPTIONS_QUEUE_SIZE,
+                    tags: this.config.S3_UPLOAD_OPTIONS_TAGS.concat([{
+                        Key: 's3UploaderSHA256',
+                        Value: sha256OfLocalFile
+                    }])
+                }, _.get(treeEntry, 's3UploadOptions', {}));
+
+
+                this.addActivity(`Uploading the file to S3 ${uploadLocationKey}`, {
+                    localFilePath,
+                    uploadParams,
+                    uploadOptions,
+                    treeEntry,
+                    fsStat, sha256OfLocalFile, s3ListObject, s3ObjectTags
+                });
+
+                let uploadingStartTime = new Date();
+                let fileStream = fs.createReadStream(localFilePath); // A test pixel that's only 43bytes in size
+                fileStream.on('error', (err) => {
+                    this.addError(err, 'file streaming error when uploading to S3');
+                    reject(err);
+                });
+                // console.debug("Uploading the file: ", {
+                //     filePath: localFilePath,
+                //     awsRegion: process.env.AWS_REGION,
+                //     uploadParams
+                // });
+
+
+                // ===============================================================
+                //    Actually Upload the file
+                // ===============================================================
+                uploadParams.Body = fileStream;
+                s3.upload(uploadParams, uploadOptions, (err, data) => {
+                    if (err) {
+                        this.addError(err, 'S3 Upload Error');
+                        reject(err);
+                    } else if (data) {
+
+                        let uploadProcessingTime = new Date().getTime() - uploadingStartTime.getTime(); // in ms
+                        this.addActivity("Uploaded file to S3: " + JSON.stringify({
+                            localFilePath,
+                            data,
+                            uploadProcessingTime: uploadProcessingTime + 'ms', // in ms
+                        }));
+                        // console.log("S3 Upload Success", data.Location);
+                        resolve({
+                            uploadOptions,
+                            localFilePath,
+                            data,
+                            uploadProcessingTime,
+                            treeEntry,
+                        });
+                        /* e.g data:  {
+                          ETag: '"958c6ad2c1183fee0bf0dd489f4204c7"',
+                          Location: 'https://bucket-location.s3.us-east-2.amazonaws.com/files/v1-0005.mp4',
+                          key: 'files/v1-0005.mp4',
+                          Key: 'files/v1-0005.mp4',
+                          Bucket: 'bucket-location'
+                        }
+                        */
+                    }
+                });
+
+            }).catch(err => {
+                this.addError(err, 'whilst getting all the promises to resolve for file stat, listing the object and tags, etc..');
+            });
         });
     }
 
     postProcessEntry = async (queueEntry, processQueueResponse) => {
-        // @todo: Remove the file if DELETE_ON_UPLOAD=true
+        // @todo: Remove the local file if DELETE_ON_UPLOAD=true
         return queueEntry;
     }
 
     /**
      * Should Replace Existing File
      *
-     * @param fileEntryS3 {Object} e.g { "Key":"testing/1x1.gif", "Size":64, "LastModified":"2021-01-31T06:44:53.000Z", "ETag":"\\"d41d8cd98f00b204e9999999fff8427e\\"",  "StorageClass":"STANDARD" }
-     * @param fsStat e.g {size: 43, mtimeMs: 1610160450289.9504, mtime: 2021-01-09T02:47:30.290Z, ...}
+     * @param s3ListObject {Object} e.g {"IsTruncated":false,"Contents":[{ "Key":"testing/1x1.gif", "Size":64, "LastModified":"2021-01-31T06:44:53.000Z", "ETag":"\\"d41d8cd98f00b204e9999999fff8427e\\"",  "StorageClass":"STANDARD" }],"Name":"testing-s3uploader","Prefix":"testing/1x1.gif","MaxKeys":2,"CommonPrefixes":[],"KeyCount":1}
+     * @param fsStat {Object} e.g {size: 43, mtimeMs: 1610160450289.9504, mtime: new Date('2021-01-09T02:47:30.290Z'), ...}
+     * @param sha256OfLocalFile {String} e.g '3331a0486cb3e8a75c8c2fdf02bf80fd8fe2b811dfe5c7b4aa892d38bfcf604a'
+     * @param s3ObjectTags {Object} e.g { TagSet: [] } if empty or hopefully {"TagSet":[{"Key":"s3UploaderSHA256","Value":"3331a0486cb3e8a75c8c2fdf02bf80fd8fe2b811dfe5c7b4aa892d38bfcf604a"}]}
      * @returns {boolean}
      */
-    shouldReplaceExistingFileUpload = async (fileEntryS3, fsStat) => {
-        let overwriteFile = false;
+    shouldUploadFile = async (s3ListObject, fsStat, sha256OfLocalFile, s3ObjectTags) => {
+        let fileEntryS3 = _.get(s3ListObject, 'Contents.0');
+
+        // -- Is it a new file upload?
+        if (!fileEntryS3) {
+            this.addActivity(`shouldUploadFile() fileEntryS3 is empty, the file ${s3ListObject.Prefix} hasn't been uploaded yet so uploading it`, fileEntryS3);
+            return true;
+        }
+
+        // -- Overwrite no matter what?
+        if (true === _.get(this.config, 'OVERWRITE', false)) {
+            this.addActivity(`shouldUploadFile() OVERWRITE config is true, so overwriting ${s3ListObject.Prefix}`, this.config.OVERWRITE);
+            return true;
+        }
+
+        // -- Check if different (filesize, SHA256 or modified time are different)
         if (true === _.get(this.config, 'OVERWRITE_EXISTING_IF_DIFFERENT', false)) {
-            // Check if the filesize of modified time are different
+
+
+            // -- Check if the filesize is different
             if (fileEntryS3.Size !== fsStat.size) {
-                this.addActivity(`You should replace the existing file upload because OVERWRITE_EXISTING_IF_DIFFERENT is true and the filesize on S3 is ${fileEntryS3.Size} but on the local filesystem it is ${fsStat.size}`);
+                this.addActivity(`shouldUploadFile() You should replace the existing file upload because OVERWRITE_EXISTING_IF_DIFFERENT is true and the filesize on S3 is ${fileEntryS3.Size} but on the local filesystem it is ${fsStat.size}`);
                 return true;
             }
-            let lastModifiedS3Date = new Date(fileEntryS3.LastModified);
-            let lastModifiedLocalDate = new Date(fsStat.mtimeMs);
-            console.log('The lastModifiedS3Date is: ', lastModifiedS3Date);
 
+            let s3ShaTagSet = _.find(s3ObjectTags.TagSet, tagSet => {
+                return tagSet && tagSet.Key && tagSet.Key === 's3UploaderSHA256';
+            });
+            if (s3ShaTagSet && s3ShaTagSet.Value && sha256OfLocalFile) {
+                // -- Using the SHA256 hashes
+                if (s3ShaTagSet.Value !== sha256OfLocalFile) {
+                    this.addActivity(`shouldUploadFile() replacing the existing file upload because OVERWRITE_EXISTING_IF_DIFFERENT is true and the SHA of the files is different. The s3 Sha256 is ${s3ShaTagSet.Value} but on the local filesystem it is ${sha256OfLocalFile}`);
+                    return true;
+                } else {
+                    this.addActivity(`shouldUploadFile() NOT replacing the existing file upload because OVERWRITE_EXISTING_IF_DIFFERENT is true but the the SHA of the files is the same ${sha256OfLocalFile}`);
+                    // NB: Falls through to the return false at the end, in case there's any other logic to be added later
+                }
+            } else {
+                // -- Using the modified dates (as the SHA hashes aren't available)
+                let lastModifiedS3Date = new Date(fileEntryS3.LastModified); // Should parse into a Date object pretty easily
+                let lastModifiedLocalDate = fsStat.mtime; // Should already be a Date object
+                // console.log('The lastModifiedDates are: ', {lastModifiedS3Date, lastModifiedLocalDate});
 
-            // @todo: Check if the SHA256 tag is added, if so, use that otherwise check the modified local date
-            // @todo: Work out if the lastModifiedLocalDate is later than the lastModifiedS3Date
+                if (lastModifiedLocalDate.getTime() > lastModifiedS3Date.getTime()) {
+                    this.addActivity(`shouldUploadFile() You should replace the existing file upload because OVERWRITE_EXISTING_IF_DIFFERENT is true and the local file was modified more recently then that file on S3`, {
+                        lastModifiedLocalDate,
+                        lastModifiedS3Date
+                    });
+                    return true;
+                } else {
+                    let now = new Date();
+                    this.addActivity(`shouldUploadFile() OVERWRITE_EXISTING_IF_DIFFERENT is true but there's no SHA but the s3 file is up to date with local according to the modified timestamp`, {
+                        lastModifiedLocalDate,
+                        lastModifiedS3Date,
+                        localModifiedTimeAgo: now.getTime() - lastModifiedLocalDate.getTime() + 'ms',
+                        s3ModifiedTimeAgo: now.getTime() - lastModifiedS3Date.getTime() + 'ms',
+                    });
+                }
+            }
         }
-        return overwriteFile;
+        return false; // It's expected that if we haven't explicitly returned true before, then we'll return false now and not overwrite the file
     }
 
     /**
@@ -316,8 +398,6 @@ class QueueConsumerS3 extends QueueConsumerBase {
         if ((fsStat.size / this.config.S3_UPLOAD_OPTIONS_PART_SIZE) < 10000) {
             return this.config.S3_UPLOAD_OPTIONS_PART_SIZE; // Use the default part size of 10MB
         }
-
-
         let partSize = Math.ceil(fsStat.size / 9998); // Work out how many parts (file chunks) will be needed, with some accounting for rounding errors
         this.addActivity(`The file is large it's ${fsStat.size / 1073741824} GB so setting the partSize to ${partSize}`);
         return partSize;

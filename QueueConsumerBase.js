@@ -120,19 +120,24 @@ class QueueConsumerBase extends QueueAndConsumerBase {
         // console.log("Processing queueEntry", queueEntry);
 
         // Pre-Process
-        queueEntry = await this.preProcessEntry(queueEntry).catch(err => {
+        let error = {};
+        queueEntry = await this.preProcessEntry(queueEntry, error).catch(err => {
             this.addError(err);
+            error.preProcessError = err;
         });
 
         // ----------------------------
         //   The main process!
         // ----------------------------
 
-        let processedQueueResponse = await this.processQueueEntry(queueEntry).catch(err => {
+
+        let processedQueueResponse = await this.processQueueEntry(queueEntry, error).catch(err => {
+            error.mainError = err;
             this.addError(err);
         }); // Run the actual main part
 
-        queueEntry = await this.postProcessEntry(queueEntry, processedQueueResponse).catch(err => {
+        queueEntry = await this.postProcessEntry(queueEntry, processedQueueResponse, error).catch(err => {
+            error.postProcessError = err;
             this.addError(err);
         });
 
@@ -143,7 +148,11 @@ class QueueConsumerBase extends QueueAndConsumerBase {
 
         // -- Resolve the queue task promise
         if (queueEntry['__completedQueueTaskPromise']) {
-            queueEntry['__completedQueueTaskPromise'].resolve(processedQueueResponse);
+            if (error) {
+                queueEntry['__completedQueueTaskPromise'].reject(error);
+            } else {
+                queueEntry['__completedQueueTaskPromise'].resolve(processedQueueResponse);
+            }
         }
 
         // -- Run it again and check if there's another entry
@@ -166,7 +175,7 @@ class QueueConsumerBase extends QueueAndConsumerBase {
      * @param queueEntry
      * @returns {Promise<*>}
      */
-    preProcessEntry = async (queueEntry) => {
+    preProcessEntry = async (queueEntry, error) => {
         return queueEntry;
     }
 
@@ -176,7 +185,7 @@ class QueueConsumerBase extends QueueAndConsumerBase {
      * @param queueEntry
      * @returns {Promise<unknown>}
      */
-    processQueueEntry = (queueEntry) => {
+    processQueueEntry = (queueEntry, error) => {
         // A very basic example which waits a bit before returning
         return new Promise((resolve, reject) => {
             setTimeout(() => {
@@ -195,7 +204,7 @@ class QueueConsumerBase extends QueueAndConsumerBase {
      * @param processQueueResponse
      * @returns {Promise<void>}
      */
-    postProcessEntry = async (queueEntry, processQueueResponse) => {
+    postProcessEntry = async (queueEntry, processQueueResponse, error) => {
         return queueEntry;
     }
 }

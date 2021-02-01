@@ -38,6 +38,7 @@ let recurseFolder = JSON.parse(_.get(process, 'env.RECURSE_FOLDER', false));
 let checkAwsBucketAtStartup = JSON.parse(_.get(process, 'env.CHECK_AWS_BUCKET_AT_STARTUP', true)); // parse it from a string to bool. Using _.get instead of || as it'll only return true even if set to false
 let actuallyUpload = JSON.parse(_.get(process, 'env.ACTUALLY_UPLOAD', true));
 let overwriteExisting = JSON.parse(_.get(process, 'env.OVERWRITE_EXISTING_IF_DIFFERENT', true));
+let overwriteAll = JSON.parse(_.get(process, 'env.OVERWRITE', false));
 // -- The local excludes are a csv string that gets turned into an array of regex entries
 let localExclude = [];
 if (process.env.LOCAL_EXCLUDE) {
@@ -59,7 +60,8 @@ let s3Config = {
     AWS_S3_BUCKET_FOLDER: s3BucketFolder,
     AWS_CONFIG_FILE: process.env.AWS_CONFIG_FILE,
     AWS_PROFILE: process.env.AWS_PROFILE,
-    OVERWRITE_EXISTING_IF_DIFFERENT: checkAwsBucketAtStartup,
+    OVERWRITE_EXISTING_IF_DIFFERENT: overwriteExisting,
+    OVERWRITE: overwriteAll,
 }
 
 
@@ -82,7 +84,7 @@ console.log("===============================\n",
         args,
     });
 
-let selfFiles = [];
+let selfFiles = [__filename, '.env', 'QueueConsumer.js'];
 
 
 // Based on https://docs.aws.amazon.com/sdk-for-javascript/v2/developer-guide/s3-example-creating-buckets.html#s3-example-creating-buckets-upload-file

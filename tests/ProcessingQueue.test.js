@@ -129,11 +129,11 @@ describe('Processing Queue', () => {
     test('settings default', () => {
         let queueManager = new QueueManager(queueManagerSettingsDefault);
         expect(queueManager.settings).toEqual({
-            "activityLength": 100,
+            "activityLength": 5000,
             "ident": expect.any(Number),
         });
         expect(queueManager.consumers[0].settings).toEqual({
-            "activityLength": 100,
+            "activityLength": 5000,
             "ident": expect.any(String),
         });
 
@@ -227,7 +227,7 @@ describe('Processing Queue', () => {
         expect(queueProcessed4promise).toBeInstanceOf(DeferredPromise);
         expect(queueProcessed4promise._promise).toBeInstanceOf(Promise);
 
-        let dateStarted = new Date();
+        // let dateStarted = new Date();
         queueManager.start();
         // let queueProcessed5response = await queueManager.addToQueue({name: "test 5"}); // Can't await for a queue task if the queue hasn't started otherwise it just times out
         let queueProcessed5promise = queueManager.addToQueue({name: "test 5"}); // Can't await for a queue task if the queue hasn't started otherwise it just times out
@@ -242,9 +242,7 @@ describe('Processing Queue', () => {
 
         // console.log("Drained in ", new Date().getTime() - dateStarted.getTime() + ' ms');
 
-        await queueManager.drained();
-        // let queueProcessed5response = await queueProcessed5Promise;
-        expect(queueProcessed5promise).resolves.toEqual({
+        await expect(queueProcessed5promise).resolves.toEqual({
             name: "test 5",
             __completedQueueTaskPromise: expect.any(DeferredPromise),
             processed: true,
@@ -252,12 +250,7 @@ describe('Processing Queue', () => {
 
         let hasDrained = await queueManager.drained();
         expect(hasDrained).toEqual(true);
-        // let queueProcessed5resolved = await queueProcessed5Promise;
-        // expect(queueProcessed5resolved).toEqual({
-        //     name: "test 5",
-        //     __completedQueueTaskPromise: expect.any(DeferredPromise),
-        //     processed: true,
-        // });
+
 
     });
 
@@ -341,7 +334,7 @@ describe('Processing Queue', () => {
         expect(queueManager.findIdleConsumerIndex()).toEqual(-1);
 
         let removeConsumerIndex = await queueManager.removeConsumer();
-        console.log("Removed consumer at index: ", removeConsumerIndex);
+        // console.log("Removed consumer at index: ", removeConsumerIndex);
         expect(removeConsumerIndex).toBeGreaterThanOrEqual(0);
         expect(queueManager.consumers.length).toEqual(1);
 
@@ -391,105 +384,255 @@ describe('Dir Tree', () => {
 // ====================================================================================
 //     S3 uploader (Queue Consumer)
 // ====================================================================================
-// describe('S3 uploading consumer', () => {
-//
-//     let s3ConsumerSettings = {
-//         consumerCount: 1,
-//         consumerClass: QueueConsumerS3, // The s3 queue Consumer
-//         consumerConfig: {
-//             AWS_PROFILE: process.env.AWS_PROFILE_TESTING,
-//             AWS_S3_BUCKET: process.env.AWS_S3_BUCKET_TESTING,
-//             AWS_S3_BUCKET_FOLDER: process.env.AWS_S3_BUCKET_FOLDER_TESTING,
-//             AWS_REGION: process.env.AWS_REGION,
-//             OVERWRITE_FILE: true, // Overwrite the file anyway
-//             OVERWRITE_EXISTING_IF_DIFFERENT: true
-//         },
-//         drainedCheckingTime: 20, // Shortened because we are dealing with very short processes
-//         removeConsumerTime: 10, // Shortened because we are dealing with very short processes
-//     }
-//     let queueManager = new QueueManager(s3ConsumerSettings);
-//
-//     const queueEntry = dirTreeResponse.children[0];
-//     const Key = s3ConsumerSettings.consumerConfig.AWS_S3_BUCKET_FOLDER + "/1x1.gif";
-//     const Location = `https://${s3ConsumerSettings.consumerConfig.AWS_S3_BUCKET}.s3.${s3ConsumerSettings.consumerConfig.AWS_REGION}.amazonaws.com/${Key}`;
-//
-//
-//     test('default configuration gets applied', () => {
-//         expect(queueManager.consumers[0].config).toEqual(_.merge({}, s3ConsumerSettings.consumerConfig, queueManager.consumers[0].defaultConfig));
-//         console.debug('queueManager.consumers[0].config: ', queueManager.consumers[0].config);
-//     });
-//
-//     test('workOutS3PartSize method works as expected', () => {
-//         expect(queueManager.consumers[0].workOutS3PartSize({size: 100})).toEqual(10485760); // A 100 byte file should easily fit in 10MB (10485760 = 10 * 1024 * 1024 )
-//         expect(queueManager.consumers[0].workOutS3PartSize({size: 11 * 1024 * 1024})).toEqual(10485760); // An 11MB byte file should still be 10MB parts
-//         expect(queueManager.consumers[0].workOutS3PartSize({size: 600 * 1024 * 1024 * 1024})).toEqual(64437397); // A 600GB file is 644,245,094,400 Bytes = 600 * 1024 * 1024 * 1024 which when split into 9998 parts is 64Mb (64437396.91938388 rounded up to  64437397)
-//     })
-//
-//
-//     test('1x1.gif uploads', async () => {
-//         // Make sure we are only processing a single 1x1.gif
-//         expect(dirTreeResponse.children.length).toEqual(1);
-//         expect(dirTreeResponse.children[0].name).toEqual("1x1.gif");
-//
-//
-//         expect(process.env.AWS_PROFILE_TESTING).toBeDefined();
-//         expect(process.env.AWS_S3_BUCKET_TESTING).toBeDefined();
-//         expect(process.env.AWS_S3_BUCKET_FOLDER_TESTING).toBeDefined();
-//
-//         // e.g in .env you might have:
-//         // AWS_PROFILE_TESTING=testing
-//         // AWS_S3_BUCKET_TESTING=testing-s3uploader
-//         // AWS_S3_BUCKET_FOLDER_TESTING=testing
-//
-//
-//         queueEntry.basePath = dirTreeResponse.path;
-//
-//         queueManager = new QueueManager(s3ConsumerSettings); // Reset it in case the other tests have modified the consumer, etc..
-//         queueManager.start();
-//         let entryResult = await queueManager.addToQueue(queueEntry).catch(err => {
-//             expect(err).toBeInstanceOf(Error);
-//             console.error("=== TESTING ERROR == ", err);
-//         }); // NB: This doesn't resolve if the queueManger isn't started already
-//
-//         console.log('Uploaded the 1x1.gif activity: ', queueManager.consumers[0].getActivity());
-//
-//         expect(entryResult).toEqual({
-//             localFilePath: expect.any(String),
-//             data: {
-//                 Bucket: s3ConsumerSettings.consumerConfig.AWS_S3_BUCKET,
-//                 Key,
-//                 Location,
-//                 ETag: expect.any(String), // e.g "d41d8cd98f00b204e9800998ecf8427e"
-//                 ServerSideEncryption: expect.any(String), // If you have it enabled it's likely AES256
-//             },
-//             uploadProcessingTime: expect.any(Number), // e.g 4123
-//             treeEntry: expect.anything(),
-//         });
-//
-//         await queueManager.drained(); // Want to see the consumers status be set to idle
-//         console.log('Uploaded the 1x1.gif activity: ', queueManager.consumers[0].getActivity());
-//
-//     });
-//
-//     // test('same 1x1.gif doesn\'t get overridden', async () => {
-//     //
-//     //     let s3ConsumerSettingsDontOverwrite = _.merge({}, s3ConsumerSettings, {consumerInfo: {OVERWRITE_FILE: false}});
-//     //     let queueManager = new QueueManager(s3ConsumerSettingsDontOverwrite);
-//     //     queueManager.start();
-//     //     let entryResult = await queueManager.addToQueue(queueEntry); // NB: This doesn't resolve if the queueManger isn't started already
-//     //     expect(entryResult).toEqual({
-//     //         localFilePath: expect.any(String),
-//     //         data: {
-//     //             Bucket: s3ConsumerSettings.consumerConfig.AWS_S3_BUCKET,
-//     //             Key,
-//     //             Location,
-//     //             ETag: expect.any(String), // e.g "d41d8cd98f00b204e9800998ecf8427e"
-//     //             ServerSideEncryption: expect.any(String), // If you have it enabled it's likely AES256
-//     //         },
-//     //         uploadProcessingTime: expect.any(Number), // e.g 4123
-//     //         treeEntry: expect.anything(),
-//     //     });
-//     //
-//     // });
-//
-// });
+describe('S3 uploading consumer', () => {
+
+    let s3ConsumerSettings = {
+        consumerCount: 1,
+        consumerClass: QueueConsumerS3, // The s3 queue Consumer
+        consumerConfig: {
+            AWS_PROFILE: process.env.AWS_PROFILE_TESTING,
+            AWS_S3_BUCKET: process.env.AWS_S3_BUCKET_TESTING,
+            AWS_S3_BUCKET_FOLDER: process.env.AWS_S3_BUCKET_FOLDER_TESTING,
+            AWS_REGION: process.env.AWS_REGION,
+            OVERWRITE: false, // Overwrite the file anyway
+            OVERWRITE_EXISTING_IF_DIFFERENT: true
+        },
+        drainedCheckingTime: 20, // Shortened because we are dealing with very short processes
+        removeConsumerTime: 10, // Shortened because we are dealing with very short processes
+    }
+    let queueManager = new QueueManager(s3ConsumerSettings);
+
+    const queueEntry = dirTreeResponse.children[0];
+    queueEntry.basePath = dirTreeResponse.path;
+    const Key = s3ConsumerSettings.consumerConfig.AWS_S3_BUCKET_FOLDER + "/1x1.gif";
+    const Location = `https://${s3ConsumerSettings.consumerConfig.AWS_S3_BUCKET}.s3.${s3ConsumerSettings.consumerConfig.AWS_REGION}.amazonaws.com/${Key}`;
+
+
+    test('default configuration gets applied', () => {
+        expect(queueManager.consumers[0].config).toEqual(_.merge({}, s3ConsumerSettings.consumerConfig, queueManager.consumers[0].defaultConfig));
+        // console.debug('queueManager.consumers[0].config: ', queueManager.consumers[0].config);
+    });
+
+    test('workOutS3PartSize method works as expected', () => {
+        expect(queueManager.consumers[0].workOutS3PartSize({size: 100})).toEqual(10485760); // A 100 byte file should easily fit in 10MB (10485760 = 10 * 1024 * 1024 )
+        expect(queueManager.consumers[0].workOutS3PartSize({size: 11 * 1024 * 1024})).toEqual(10485760); // An 11MB byte file should still be 10MB parts
+        expect(queueManager.consumers[0].workOutS3PartSize({size: 600 * 1024 * 1024 * 1024})).toEqual(64437397); // A 600GB file is 644,245,094,400 Bytes = 600 * 1024 * 1024 * 1024 which when split into 9998 parts is 64Mb (64437396.91938388 rounded up to  64437397)
+    });
+
+
+    // --------------------------------------------------------------
+    //   shouldUploadFile
+    // --------------------------------------------------------------
+    describe('shouldUploadFile', () => {
+
+
+        let s3ListObject = {
+            "IsTruncated": false,
+            "Contents": [{
+                "Key": "testing/1x1.gif",
+                "Size": 64,
+                "LastModified": "2021-01-31T06:44:53.000Z",
+                "ETag": '"d41d8cd98f00b204e9999999fff8427e"',
+                "StorageClass": "STANDARD"
+            }],
+            "Name": "testing-s3uploader",
+            "Prefix": "testing/1x1.gif",
+            "MaxKeys": 1,
+            "CommonPrefixes": [],
+            "KeyCount": 1
+        };
+        let s3ListObjectNoFile = {
+            "Contents": [],
+            "Prefix": "testing/1x1.gif",
+        };
+        let fsStat = {
+            dev: 1733172691,
+            mode: 33206,
+            nlink: 1,
+            uid: 0,
+            gid: 0,
+            rdev: 0,
+            blksize: 4096,
+            ino: 50665495808138510,
+            size: 43, // Actually the correct size
+            blocks: 0,
+            atimeMs: 1612086167975.0261,
+            mtimeMs: 1610160450289.9504,
+            ctimeMs: 1610160450289.9504,
+            birthtimeMs: 1610160449423.793,
+            atime: new Date('2021-01-31T09:42:47.975Z'), // Access Time
+            mtime: new Date('2021-01-09T02:47:30.290Z'), // Modified Time
+            ctime: new Date('2021-01-09T02:47:30.290Z'), // Change Time (inode data modification e.g chmod, chown, rename, link)
+            birthtime: new Date('2021-01-09T02:47:29.424Z'), // When the file was created
+        };
+        let fsStatSameSize = _.merge({}, fsStat, {size: s3ListObject.Contents[0].Size});
+        let sha256OfLocalFile = '3331a0486cb3e8a75c8c2fdf02bf80fd8fe2b811dfe5c7b4aa892d38bfcf604a';
+        let s3ObjectTags = {
+            "TagSet": [{
+                "Key": "s3UploaderSHA256",
+                "Value": "3331a0486cb3e8a75c8c2fdf02bf80fd8fe2b811dfe5c7b4aa892d38bfcf604a"
+            }]
+        };
+        let s3ObjectTagsDifferentSha = _.merge({}, s3ObjectTags);
+        s3ObjectTagsDifferentSha.TagSet[0].Value = 'INVALIDSHA256aaaa3331a0486cbc8c2fdf02bf80fd8f7b4aa892d38bfcf604a';
+        let s3ObjectNoTags = {
+            "TagSet": []
+        }
+
+
+        test('OVERWRITE_EXISTING_IF_DIFFERENT and filesize different', async () => {
+            let shouldUploadTrue = await queueManager.consumers[0].shouldUploadFile(s3ListObject, fsStat, sha256OfLocalFile, s3ObjectTags);
+            expect(shouldUploadTrue).toEqual(true);
+            expect(_.last(queueManager.consumers[0].activity).message).toEqual('shouldUploadFile() You should replace the existing file upload because OVERWRITE_EXISTING_IF_DIFFERENT is true and the filesize on S3 is 64 but on the local filesystem it is 43');
+        });
+
+        test('new file (fileEntryS3 is empty)', async () => {
+            await expect(queueManager.consumers[0].shouldUploadFile(s3ListObjectNoFile, fsStat, sha256OfLocalFile, s3ObjectTags)).resolves.toEqual(true);
+            expect(_.last(queueManager.consumers[0].activity).message).toEqual('shouldUploadFile() fileEntryS3 is empty, the file testing/1x1.gif hasn\'t been uploaded yet so uploading it');
+        });
+
+
+        test('SHA is different', async () => {
+            expect(await queueManager.consumers[0].shouldUploadFile(s3ListObject, fsStatSameSize, sha256OfLocalFile, s3ObjectTagsDifferentSha)).toEqual(true);
+            expect(_.last(queueManager.consumers[0].activity).message).toEqual('shouldUploadFile() replacing the existing file upload because OVERWRITE_EXISTING_IF_DIFFERENT is true and the SHA of the files is different. The s3 Sha256 is INVALIDSHA256aaaa3331a0486cbc8c2fdf02bf80fd8f7b4aa892d38bfcf604a but on the local filesystem it is 3331a0486cb3e8a75c8c2fdf02bf80fd8fe2b811dfe5c7b4aa892d38bfcf604a');
+        });
+
+        test('SHA is the same (so don\'t overwrite)', async () => {
+            expect(await queueManager.consumers[0].shouldUploadFile(s3ListObject, fsStatSameSize, sha256OfLocalFile, s3ObjectTags)).toEqual(false);
+            expect(_.last(queueManager.consumers[0].activity).message).toEqual('shouldUploadFile() NOT replacing the existing file upload because OVERWRITE_EXISTING_IF_DIFFERENT is true but the the SHA of the files is the same 3331a0486cb3e8a75c8c2fdf02bf80fd8fe2b811dfe5c7b4aa892d38bfcf604a');
+        });
+
+        test('Not SHA and not newly modified', async () => {
+            await expect(queueManager.consumers[0].shouldUploadFile(s3ListObject, fsStatSameSize, sha256OfLocalFile, s3ObjectNoTags)).resolves.toEqual(false);
+            expect(_.last(queueManager.consumers[0].activity).message).toEqual('shouldUploadFile() OVERWRITE_EXISTING_IF_DIFFERENT is true but there\'s no SHA but the s3 file is up to date with local according to the modified timestamp');
+            console.log(_.last(queueManager.consumers[0].activity));
+        });
+
+        test('Not SHA but is newly modified', async () => {
+            // lastModifiedLocalDate: new Date('2021-01-09T02:47:30.290Z') // Original
+            // lastModifiedS3Date: new Date('2021-01-31T06:44:53.000Z')  // What we need to be more recent than
+            let fsStatSameSizeNewlyModified = _.merge({}, fsStatSameSize, {mtime: new Date('2021-02-02T02:22:22.222Z')});
+            await expect(queueManager.consumers[0].shouldUploadFile(s3ListObject, fsStatSameSizeNewlyModified, sha256OfLocalFile, s3ObjectNoTags)).resolves.toEqual(true);
+            expect(_.last(queueManager.consumers[0].activity).message).toEqual('shouldUploadFile() You should replace the existing file upload because OVERWRITE_EXISTING_IF_DIFFERENT is true and the local file was modified more recently then that file on S3');
+        });
+
+        // Not sure why but if this is before other normal queueManager tests then it breaks them
+        test('OVERWRITE is true', async () => {
+            let s3ConsumerSettingsOverwriteTrue = _.merge({}, s3ConsumerSettings, {consumerConfig: {OVERWRITE: true}});
+            let queueManagerTest = new QueueManager(s3ConsumerSettingsOverwriteTrue);
+            await expect(queueManagerTest.consumers[0].shouldUploadFile(s3ListObject, fsStatSameSize, sha256OfLocalFile, s3ObjectTags)).resolves.toEqual(true);
+            expect(_.last(queueManagerTest.consumers[0].activity).message).toEqual('shouldUploadFile() OVERWRITE config is true, so overwriting testing/1x1.gif');
+        });
+
+
+    });
+
+    test('1x1.gif uploads', async () => {
+        // Make sure we are only processing a single 1x1.gif
+        expect(dirTreeResponse.children.length).toEqual(1);
+        expect(dirTreeResponse.children[0].name).toEqual("1x1.gif");
+
+
+        expect(process.env.AWS_PROFILE_TESTING).toBeDefined();
+        expect(process.env.AWS_S3_BUCKET_TESTING).toBeDefined();
+        expect(process.env.AWS_S3_BUCKET_FOLDER_TESTING).toBeDefined();
+
+        // e.g in .env you might have:
+        // AWS_PROFILE_TESTING=testing
+        // AWS_S3_BUCKET_TESTING=testing-s3uploader
+        // AWS_S3_BUCKET_FOLDER_TESTING=testing
+
+
+        // -- We want to ensure the file is overwritten even if it exists
+        let s3ConsumerSettingsOverwriteTrue = _.merge({}, s3ConsumerSettings, {consumerConfig: {OVERWRITE: true}});
+        expect(s3ConsumerSettingsOverwriteTrue.consumerConfig.OVERWRITE).toEqual(true);
+        queueManager = new QueueManager(s3ConsumerSettingsOverwriteTrue); // Reset it in case the other tests have modified the consumer, etc..
+        expect(queueManager.consumers.length).toEqual(1);
+        queueManager.start();
+
+        // -- Actually process the queue!
+        let entryResult = await queueManager.addToQueue(queueEntry).catch(err => {
+            console.error("=== TESTING ERROR == ", err);
+            expect('It errored').toBe(err);
+        }); // NB: This doesn't resolve if the queueManger isn't started already
+
+        await queueManager.drained();
+        console.log('Uploaded the 1x1.gif activity: ', queueManager.consumers[0].activity);
+
+        expect(entryResult).toEqual({
+            localFilePath: expect.any(String),
+            data: {
+                Bucket: s3ConsumerSettings.consumerConfig.AWS_S3_BUCKET,
+                Key,
+                key: Key,
+                Location,
+                ETag: expect.any(String), // e.g "d41d8cd98f00b204e9800998ecf8427e"
+                ServerSideEncryption: expect.any(String), // If you have it enabled it's likely AES256
+            },
+            uploadProcessingTime: expect.any(Number), // e.g 4123
+            treeEntry: expect.anything(),
+            uploadOptions: {
+                partSize: 10485760,
+                queueSize: 4,
+                tags: [
+                    {
+                        Key: "s3UploaderSHA256",
+                        Value: "3331a0486cb3e8a75c8c2fdf02bf80fd8fe2b811dfe5c7b4aa892d38bfcf604a",
+                    },
+                ],
+            },
+        });
+
+        await queueManager.drained(); // Want to see the consumers status be set to idle
+        // console.log('Uploaded the 1x1.gif activity: ', queueManager.consumers[0].getActivity());
+
+    });
+
+    test('same 1x1.gif doesn\'t get overridden', async () => {
+
+        let s3ConsumerSettingsDontOverwrite = _.merge({}, s3ConsumerSettings, {
+            consumerInfo: {
+                OVERWRITE: false,
+                OVERWRITE_EXISTING_IF_DIFFERENT: true
+            }
+        }); // It should be false anyway
+        expect(s3ConsumerSettingsDontOverwrite.consumerInfo.OVERWRITE).toEqual(false);
+        expect(s3ConsumerSettingsDontOverwrite.consumerInfo.OVERWRITE_EXISTING_IF_DIFFERENT).toEqual(true);
+        queueManager = new QueueManager(s3ConsumerSettingsDontOverwrite);
+        queueManager.start();
+
+
+        // try {
+        //     let queueProcessed = await queueManager.addToQueue(queueEntry); // NB: This doesn't resolve if the queueManger isn't started already
+        //     console.log('Activity before: ', queueManager.consumers[0].activity);
+        //     await queueManager.drained();
+        //     console.log('queueProcessed: ', queueProcessed);
+        // } catch (err) {
+        //     console.error("UNEXPECTED ERROR DURING QUEUE PROCESSING", err);
+        // }
+        // expect(false).toEqual(true);
+        //
+        // console.log("The dirTreeResponse.path is: ", _.get(dirTreeResponse, 'children.0.path'));
+
+        // ===========---------------------=======================
+
+        // let addToQueuePromise = queueManager.addToQueue(queueEntry); // NB: This doesn't resolve if the queueManger isn't started already
+        // console.log('Activity before: ', queueManager.consumers[0].activity);
+        // await queueManager.drained();
+
+        return expect(queueManager.addToQueue(queueEntry)).rejects.toEqual({
+            "mainError": "shouldReplaceExistingFile is false, so not replacing " + path.join(_.get(dirTreeResponse, 'children.0.path'))
+        });
+
+        // addToQueuePromise.catch(err => {
+        //     console.error("The rejrected error is: ", err);
+        // })
+        // console.log('Activity AFTER: ', queueManager.consumers[0].activity);
+
+
+    });
+
+    test.todo('Setup console logging of the activity log entries');
+    test.todo('Get custom queue consumer\'s being included if they can be found?');
+
+});

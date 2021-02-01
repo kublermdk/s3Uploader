@@ -208,7 +208,7 @@ class QueueManager extends QueueAndConsumerBase {
                 if (consumerIndex !== undefined && consumerIndex !== -1) {
                     this.addActivity(`Removing consumer at index ${consumerIndex}`);
                     let consumer = this.consumers[consumerIndex];
-                    console.log("Found an idle Consumer to remove at index ", consumerIndex, consumer.getStatistics(true));
+                    // console.log("Found an idle Consumer to remove at index ", consumerIndex, consumer.getStatistics(true));
                     consumer.pause();
                     this.consumers.splice(consumerIndex, 1); // Remove the consumer from the array, but we don't actually unset it...
                     // @todo: Unset the consumer when it has finished pausing
