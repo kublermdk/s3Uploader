@@ -624,5 +624,5 @@ describe('S3 uploading consumer', () => {
 
     test.todo('Setup console logging of the activity log entries');
     test.todo('Get custom queue consumer\'s being included if they can be found?');
-
+    test.todo('Setup DELETE_ON_UPLOAD');
 });

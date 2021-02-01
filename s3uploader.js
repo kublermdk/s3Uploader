@@ -6,13 +6,13 @@ const path = require('path');
 const dirTree = require("directory-tree");
 const DeferredPromise = require('./DeferredPromise.js');
 const QueueManager = require('./QueueManager.js');
-const QueueConsumer = require('./QueueConsumerS3.js');
+const QueueConsumerS3 = require('./QueueConsumerS3.js');
 const _ = require('lodash');
-let queueManagerSettings = {consumerCount: 2, consumerClass: QueueConsumer};
+
 
 let uploadedFiles = [];
 let status = {}; // For a web server response
-
+let startTime = new Date();
 if (process.env.DEBUG && JSON.parse(process.env.DEBUG) !== true) {
     console.debug = function () {
     }; // Make it an empty function
@@ -39,6 +39,8 @@ let checkAwsBucketAtStartup = JSON.parse(_.get(process, 'env.CHECK_AWS_BUCKET_AT
 let actuallyUpload = JSON.parse(_.get(process, 'env.ACTUALLY_UPLOAD', true));
 let overwriteExisting = JSON.parse(_.get(process, 'env.OVERWRITE_EXISTING_IF_DIFFERENT', true));
 let overwriteAll = JSON.parse(_.get(process, 'env.OVERWRITE', false));
+let queueConsumerCount = JSON.parse(_.get(process, 'env.QUEUE_CONSUMER_COUNT', 2));
+const debug = JSON.parse(_.get(process, 'env.DEBUG', false));
 // -- The local excludes are a csv string that gets turned into an array of regex entries
 let localExclude = [];
 if (process.env.LOCAL_EXCLUDE) {
@@ -54,7 +56,13 @@ if (process.env.LOCAL_EXCLUDE) {
 }
 
 
-let s3Config = {
+if (false === debug) {
+    // Don't debug anything
+    console.debug = () => {
+    };
+}
+
+let s3ConsumerConfig = {
     AWS_REGION: process.env.AWS_REGION,
     AWS_S3_BUCKET: s3BucketName,
     AWS_S3_BUCKET_FOLDER: s3BucketFolder,
@@ -70,11 +78,6 @@ console.log("===============================\n",
         LOCAL_FOLDER: localFolder,
         FILE_EXTENSIONS: process.env.FILE_EXTENSIONS,
         // MIME_TYPES: process.env.MIME_TYPES,
-        AWS_REGION: process.env.AWS_REGION,
-        AWS_S3_BUCKET: s3BucketName,
-        AWS_S3_BUCKET_FOLDER: s3BucketFolder,
-        AWS_CONFIG_FILE: process.env.AWS_CONFIG_FILE,
-        AWS_PROFILE: process.env.AWS_PROFILE,
         DEBUG: JSON.parse(_.get(process, 'env.DEBUG', true)),
         IGNORE_SELF: ignoreSelf,
         LOCAL_EXCLUDE: localExclude,
@@ -82,10 +85,15 @@ console.log("===============================\n",
         CHECK_AWS_BUCKET_AT_STARTUP: checkAwsBucketAtStartup,
         OVERWRITE_EXISTING_IF_DIFFERENT: checkAwsBucketAtStartup,
         args,
+        s3ConsumerConfig
     });
 
+// @todo: Don't upload self files
 let selfFiles = [__filename, '.env', 'QueueConsumer.js'];
 
+// @todo: Setup a file hash setup with the filepath and contain a list of promises, etc..
+
+let filesHash = {}; //
 
 // Based on https://docs.aws.amazon.com/sdk-for-javascript/v2/developer-guide/s3-example-creating-buckets.html#s3-example-creating-buckets-upload-file
 AWS.config.update({region: process.env.AWS_REGION}); // Likely to be 'us-east-2' Ohio
@@ -103,6 +111,11 @@ let checkAwsBucketPromise = new DeferredPromise();
 let startupCompletedPromise = new DeferredPromise();
 
 // For later
+let queueManagerSettings = {
+    consumerCount: queueConsumerCount,
+    consumerClass: QueueConsumerS3,
+    consumerConfig: s3ConsumerConfig,
+};
 let queueManager = new QueueManager(queueManagerSettings);
 
 
@@ -227,6 +240,9 @@ const treeOutput = function (filteredTree, indents = '') {
 }
 
 const fileSizeReadable = function (sizeBytes) {
+    if (null === sizeBytes || isNaN(sizeBytes)) {
+        return sizeBytes;
+    }
     let decimals = (Math.round((sizeBytes / 1048576) * 100) / 100).toFixed(2);
     if (decimals.toString().length > 3) {
         decimals = decimals.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")
@@ -236,6 +252,16 @@ const fileSizeReadable = function (sizeBytes) {
 }
 
 
+const occasionalQueueProcessingStatusUpdates = (updateTimeInMs = 10000) => {
+
+    return setInterval(() => {
+        console.log('Update: ', {
+            secondsSinceStarted: (new Date().getTime() - startTime) / 1000 + 's',
+            // queueManagerStats: JSON.stringify(queueManager.getStatistics(true), null, 2),
+            queueManagerStats: queueManager.getStatistics(true),
+        });
+    }, updateTimeInMs);
+}
 //
 const addUploadFilesToQueue = async (queueManager, filteredTree, basePath = localFolder) => {
     if (!filteredTree) {
@@ -247,7 +273,82 @@ const addUploadFilesToQueue = async (queueManager, filteredTree, basePath = loca
         if (treeEntry.type === 'file') {
             // console.debug("Sending file to be uploaded", {treeEntry, basePath});
             treeEntry.basePath = basePath;
-            queueManager.addToQueue(treeEntry);
+
+
+            filesHash[treeEntry.path] = {treeEntry, uploadPromise: queueManager.addToQueue(treeEntry)};
+            filesHash[treeEntry.path].uploadPromise.then(processingResponse => {
+                const fileHashKey = _.get(processingResponse, 'treeEntry.path', treeEntry.path);
+                let fileHasEntry = filesHash[fileHashKey];
+                filesHash[fileHashKey] = _.merge(fileHasEntry, processingResponse);
+
+                if (debug) {
+                    console.debug("Processed file: ", processingResponse);
+                } else {
+                    console.log(`Processed File: \n`, {
+                            file: _.get(processingResponse, 'treeEntry.path', 'N/A'),
+                            processingTime: _.get(processingResponse, 'processingTime', 'N/A'),
+                            uploadProcessingTime: _.get(processingResponse, 'uploadProcessingTime', 'Not Uploaded'),
+                            uploaded: _.get(processingResponse, 'uploaded', 'N/A'),
+                            // shouldUploadFile: _.get(processingResponse, 'shouldUploadFile', 'N/A'),
+                            sha256: _.get(processingResponse, 'sha256OfLocalFile', 'N/A'),
+                            s3Location: _.get(processingResponse, 's3ListObject.Contents.0.Key', 'N/A'),
+                            size: fileSizeReadable(_.get(processingResponse, 'treeEntry.size', null)),
+                        }
+                    )
+
+                }
+                /* e.g
+                processingResponse:
+                {
+                  uploaded: true,
+                  shouldUploadFile: true,
+                  localFilePath: 'C:\\s3UploadExample\\2019-03-16th Trip\\2019-03-16th Trip_V1-0052.mp4',
+                  sha256OfLocalFile: 'fddb63e4ef19227abf6e5f4719c1fe7c91f2d11b2b4a5a8ae8a6d5436db795c6',
+                  s3ObjectTags: { TagSet: [ [Object] ] }
+                  uploadProcessingTime: 2817,
+                  data: {
+                    ETag: '"7dea58fd061e30c2b5ad52273fa6cda4"',
+                    ServerSideEncryption: 'AES256',
+                    Location: 'https://testing-s3uploader.s3.us-east-2.amazonaws.com/stuff/2019-07-20Th%20Timelapse%20-%20Post%20Sunset%20Stabilised-47.mp4',
+                    key: 'stuff/2019-07-20Th Timelapse - Post Sunset Stabilised-47.mp4',
+                    Key: 'stuff/2019-07-20Th Timelapse - Post Sunset Stabilised-47.mp4',
+                    Bucket: 'testing-s3uploader'
+                  },
+                  s3ListObject: {
+                    IsTruncated: false,
+                    Contents: [{ "Key":"2019-03-16th Trip_V1-0052.mp4", "Size":1082374, "LastModified":"2021-01-31T06:44:53.000Z", "ETag":"\\"d41d8cd98f00b204e9999999fff8427e\\"",  "StorageClass":"STANDARD" } ],
+                    Name: 'testing-s3uploader',
+                    Prefix: 'stuff/2019-03-16th Trip_V1-0052.mp4',
+                    MaxKeys: 1,
+                    CommonPrefixes: [],
+                    KeyCount: 1
+                  },
+                  treeEntry: {
+                    path: 'C:/s3UploadExample/2019-03-16th Trip/2019-03-16th Trip_V1-0052.mp4',
+                    name: '2019-03-16th Trip_V1-0052.mp4',
+                    size: 1082374,
+                    extension: '.mp4',
+                    type: 'file',
+                    mode: 33206,
+                    mtime: 2020-08-15T18:34:43.000Z,
+                    mtimeMs: 1597516483000,
+                    basePath: 'C:/s3UploadExample',
+                    __completedQueueTaskPromise: DeferredPromise {
+                      resolve: [Function (anonymous)],
+                      reject: [Function (anonymous)],
+                      then: [Function: bound then],
+                      catch: [Function: bound catch],
+                      _promise: [Promise],
+                      [Symbol(Symbol.toStringTag)]: 'Promise'
+                    }
+                  }
+                }
+
+                 */
+            }).catch(err => {
+                console.log(`Error processing file ${treeEntry.path}: `, err);
+            });
+            // console.debug("Added file to queue: ", treeEntry.path);
         }
         if (_.get(treeEntry, 'children.length') > 0) {
             addUploadFilesToQueue(queueManager, treeEntry.children, basePath);
@@ -289,7 +390,7 @@ startupCompletedPromise.then((values) => {
     console.debug(localFolder);
     let filteredTree = filterOutRecursiveDirectoriesIfNeeded(dirTree(localFolder, dirTreeOptions));
     console.debug("Checking files:");
-    console.debug("The filteredTree is: ", filteredTree);
+    // console.debug("The filteredTree is: ", filteredTree);
     console.log("\nThe filteredTree as nicer output is: \n", treeOutput(filteredTree));
     // e.g: The filteredTree is:  {
     //   path: 'C:/Images/2020-12-31st New Years Eve',
@@ -320,6 +421,7 @@ startupCompletedPromise.then((values) => {
     //   type: 'directory'
     // }
 
+
     if (!actuallyUpload) {
         console.log("Not uploading any files as ACTUALLY_UPLOAD is set to false");
         return null;
@@ -332,35 +434,40 @@ startupCompletedPromise.then((values) => {
         console.log("Invalid empty or disabled filteredTree, nothing to upload", filteredTree);
         return null;
     }
+    queueManager.start(); // Start processing as soon as we add entries to the queue
 
     // ====================================
     //   Add Files to Processing Queue
     // ====================================
 
-    // @todo: Check if the file exists before trying to upload it
     // @todo: Default upload type (e.g x-amz-storage-class able to be set to DEEP_ARCHIVE)
     // @todo: MIME_TYPES ?? Not right now
     // @todo: IGNORE_SELF (__file and also .env, assumes it's been compiled to a single file)
     // @todo: Have a local webserver
     // @todo: Regular checking
-
-    // @todo: Add files to a processing queue, can have multiple uploaders running at once
     // @todo: Add a single filesystem checker - Can scan regularly or add a filewatch
-    // @todo: Work out how to NOT upload a file until it's been fully uploaded by Rsync (even if it gets only partly uploaded)
+    // @todo: Work out how to NOT upload a file until it's been fully uploaded by Rsync (even if it gets only partly rsync'd)
 
     let basePath = _.get(filteredTree, '0.path');
     await addUploadFilesToQueue(queueManager, filteredTree, basePath);
-    queueManager.start();
-    console.log('queueManager ', {
-        status: queueManager.getStatus(),
-        queueCount: queueManager.getQueueCount(),
-        consumerCount: queueManager.getConsumerCount(),
-        activity: queueManager.activity
-    });
+    return null;
+}).then(async () => {
+    console.log("Initial Uploading being processed for: ", _.keys(filesHash));
 
+    let occasionalUpdatesTimer = occasionalQueueProcessingStatusUpdates();
 
-}).then(uploadedFiles => {
-    console.log("Completed uploading: ", uploadedFiles);
+    // console.log('queueManager Stats',
+    //     queueManager.getStatistics(true)
+    // );
+    await queueManager.drained();
+    clearInterval(occasionalUpdatesTimer);
+    // console.debug("Completed initial uploading: ", uploadedFiles);
+    console.log("Completed initial processing in : " + (new Date().getTime() - startTime) / 1000 + 's');
+    return uploadedFiles;
+}).then(async () => {
+    // @todo: Check for any new files
+    console.log("@todo: Check for new files");
+    console.log("-------");
 }).catch(err => {
     console.err("Error when uploading files: ", err);
 });

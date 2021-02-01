@@ -48,6 +48,7 @@ class QueueConsumerS3 extends QueueConsumerBase {
     processQueueEntry = async (treeEntry) => {
 
         return new Promise((resolve, reject) => {
+            let processingTimeStarted = new Date();
             const basePath = treeEntry.basePath;
 
             let s3BucketFolder = this.config.AWS_S3_BUCKET_FOLDER;
@@ -125,7 +126,11 @@ class QueueConsumerS3 extends QueueConsumerBase {
             }, async (err, tags) => {
                 if (err) {
                     // e.g NoSuchKey: The specified key does not exist.
-                    this.addError(err, `S3 getObjectTagging for ${uploadLocationKey}`);
+
+                    if (err.code !== 'NoSuchKey') {
+                        // Ignore the NoSuchKey errors, just means the file hasn't been uploaded yet
+                        this.addError(err, `S3 getObjectTagging for ${uploadLocationKey}`);
+                    }
                     s3ObjectTaggingPromise.resolve({TagSet: []}); // It's OK if the file doesn't exist... We might miss other important errors like network outages, but this is only to check for the SHA256 hash as a tag, it's partly optional
                     /* Example err:
 
@@ -194,6 +199,10 @@ class QueueConsumerS3 extends QueueConsumerBase {
                         shouldUploadFile: false,
                         localFilePath,
                         treeEntry,
+                        s3ListObject,
+                        sha256OfLocalFile,
+                        s3ObjectTags,
+                        processingTime: (new Date().getTime() - processingTimeStarted.getTime()) / 1000 + 's',
                     });
                 }
 
@@ -247,18 +256,23 @@ class QueueConsumerS3 extends QueueConsumerBase {
                     } else if (data) {
 
                         let uploadProcessingTime = new Date().getTime() - uploadingStartTime.getTime(); // in ms
+                        let processingTime = (new Date().getTime() - processingTimeStarted.getTime()) / 1000 + 's';
                         this.addActivity("Uploaded file to S3: " + JSON.stringify({
                             localFilePath,
                             data,
-                            uploadProcessingTime: uploadProcessingTime + 'ms', // in ms
+                            uploadProcessingTime: uploadProcessingTime, // in ms
                         }));
                         // console.log("S3 Upload Success", data.Location);
                         resolve({
                             uploaded: true,
-                            uploadOptions,
                             localFilePath,
+                            uploadProcessingTime: uploadProcessingTime / 1000 + 's',
+                            processingTime,
                             data,
-                            uploadProcessingTime,
+                            uploadOptions,
+                            s3ListObject,
+                            sha256OfLocalFile,
+                            s3ObjectTags,
                             treeEntry,
                         });
                         /* e.g data:  {
