@@ -563,7 +563,7 @@ describe('S3 uploading consumer', () => {
             // -- Temp folder init
             // Check https://nodejs.org/api/fs.html#fs_fs_mkdtemp_prefix_options_callback for more information about temporary directory creation
             let tempFolder = fs.mkdtempSync(`${tmpDir}${sep}`);
-            console.log('1x1.gif is being uploaded from the temporary directory: ', {tempFolder});
+            // console.log('1x1.gif is being uploaded from the temporary directory: ', {tempFolder});
 
             let originalTestFile = path.join(__dirname, 'resources/1x1.gif');
             let tempTestFile = path.join(tempFolder, `${sep}1x1.gif`);
@@ -677,6 +677,11 @@ describe('S3 uploading consumer', () => {
             });
 
 
+            expect(() => {
+                fs.accessSync(tempTestFile, fs.constants.F_OK);
+            }).toThrow(); // It's a worry if the file is still there, means it wasn't deleted
+
+
         });
 
     });
@@ -736,7 +741,8 @@ describe('S3 uploading consumer', () => {
                 name: "1x1.gif",
                 path: expect.any(String), // e.g "C:/s3uploader/tests/resources/1x1.gif",
                 size: 43,
-                type: "file"
+                type: "file",
+                postProcessingCompleted: true,
             },
         });
     });
