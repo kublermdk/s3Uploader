@@ -73,9 +73,9 @@ describe('Processing Queue', () => {
         expect(queueManager).toBeDefined();
         expect(queueManager.getConsumerCount()).toBe(2);
         expect(queueManager.getStatistics()).toEqual({
-            "consumerCount": 2,
-            "queueCount": 0,
-            "status": "init",
+            consumerCount: 2,
+            queueCount: 0,
+            status: "init",
         });
     });
 
@@ -85,9 +85,9 @@ describe('Processing Queue', () => {
         let queueManager = new QueueManager(queueManagerSettingsOne);
         expect(queueManager.getConsumerCount()).toBe(1);
         expect(queueManager.getStatistics()).toEqual({
-            "consumerCount": 1,
-            "queueCount": 0,
-            "status": "init",
+            consumerCount: 1,
+            queueCount: 0,
+            status: "init",
         });
 
     });
@@ -100,9 +100,9 @@ describe('Processing Queue', () => {
         queueManager.addToQueue({name: "test"});
         expect(queueManager.getQueueCount()).toBe(1);
         expect(queueManager.getStatistics()).toEqual({
-            "consumerCount": 2,
-            "queueCount": 1,
-            "status": "init",
+            consumerCount: 2,
+            queueCount: 1,
+            status: "init",
         });
 
     });
@@ -118,9 +118,9 @@ describe('Processing Queue', () => {
     test('accepts an extended Queue Consumer', () => {
         let queueManager = new QueueManager({consumerCount: 1, consumerClass: QueueConsumerS3});
         expect(queueManager.getStatistics()).toEqual({
-            "consumerCount": 1,
-            "queueCount": 0,
-            "status": "init",
+            consumerCount: 1,
+            queueCount: 0,
+            status: "init",
         });
         expect(queueManager.consumers[0]).toBeInstanceOf(QueueConsumerS3);
     });
@@ -129,33 +129,33 @@ describe('Processing Queue', () => {
     test('settings default', () => {
         let queueManager = new QueueManager(queueManagerSettingsDefault);
         expect(queueManager.settings).toEqual({
-            "activityLength": 5000,
-            "ident": expect.any(Number),
+            activityLength: 5000,
+            ident: expect.any(Number),
         });
         expect(queueManager.consumers[0].settings).toEqual({
-            "activityLength": 5000,
-            "ident": expect.any(String),
+            activityLength: 5000,
+            ident: expect.any(String),
         });
 
     });
 
 
     test('settings flow through', () => {
-        let queueManager = new QueueManager(queueManagerSettingsOne, {"activityLength": 1});
+        let queueManager = new QueueManager(queueManagerSettingsOne, {activityLength: 1});
         expect(queueManager.settings).toEqual({
-            "activityLength": 1,
-            "ident": expect.any(Number),
+            activityLength: 1,
+            ident: expect.any(Number),
         });
         expect(queueManager.consumers[0].settings).toEqual({
-            "activityLength": 1,
-            "ident": expect.any(String),
+            activityLength: 1,
+            ident: expect.any(String),
         });
 
     });
 
 
     test('activityLength is shortened', () => {
-        let queueManager = new QueueManager(queueManagerSettingsOne, {"activityLength": 2});
+        let queueManager = new QueueManager(queueManagerSettingsOne, {activityLength: 2});
 
         // console.log(queueManager.consumers[0].activity);
         // NB: The consumer will already have some activity (being set from init to starting)
@@ -167,8 +167,8 @@ describe('Processing Queue', () => {
         let addActivityResponse3 = consumer.addActivity('Test message 3');
 
         expect(queueManager.consumers[0].settings).toEqual({
-            "activityLength": 2,
-            "ident": expect.any(String),
+            activityLength: 2,
+            ident: expect.any(String),
         });
 
         expect(activityQueueInit).toEqual(1);
@@ -185,12 +185,12 @@ describe('Processing Queue', () => {
 
 
     test('activityLength 0 doesn\'t add any activity', () => {
-        let queueManager = new QueueManager(queueManagerSettingsOne, {"activityLength": 0});
+        let queueManager = new QueueManager(queueManagerSettingsOne, {activityLength: 0});
         let addActivityResponse = queueManager.consumers[0].addActivity('Test message');
 
         expect(queueManager.consumers[0].settings).toEqual({
-            "activityLength": 0,
-            "ident": expect.any(String),
+            activityLength: 0,
+            ident: expect.any(String),
         });
         expect(addActivityResponse).toEqual(0);
         expect(queueManager.consumers[0].activity.length).toEqual(0);
@@ -198,10 +198,10 @@ describe('Processing Queue', () => {
 
 
     test('activityLength false isn\'t shortened, it grows forever', () => {
-        let queueManager = new QueueManager(queueManagerSettingsOne, {"activityLength": false});
+        let queueManager = new QueueManager(queueManagerSettingsOne, {activityLength: false});
         expect(queueManager.consumers[0].settings).toEqual({
-            "activityLength": false,
-            "ident": expect.any(String),
+            activityLength: false,
+            ident: expect.any(String),
         });
 
         // NB: The consumer will already have some activity (being set from init to starting)
@@ -234,9 +234,9 @@ describe('Processing Queue', () => {
 
         // expect.assertions(3);
         expect(queueManager.getStatistics()).toEqual({
-            "consumerCount": expect.any(Number),
-            "queueCount": expect.any(Number),
-            "status": "started",
+            consumerCount: expect.any(Number),
+            queueCount: expect.any(Number),
+            status: "started",
         });
 
 
@@ -261,9 +261,9 @@ describe('Processing Queue', () => {
         queueManager.addToQueue({name: "test 1"});
 
         expect(queueManager.getStatistics()).toEqual({
-            "consumerCount": expect.any(Number),
-            "queueCount": expect.any(Number),
-            "status": "started",
+            consumerCount: expect.any(Number),
+            queueCount: expect.any(Number),
+            status: "started",
         });
 
         let hasDrained = await queueManager.drained();
@@ -333,31 +333,33 @@ describe('Processing Queue', () => {
 describe('Dir Tree', () => {
 
 
-    // e.g {"path":"C:/s3uploader/tests/resources","name":"resources","mode":16822,"mtime":"2021-01-28T14:38:38.045Z","mtimeMs":1611844718044.9944,"children":[{"path":"C:/s3uploader/tests/resources/1x1.gif","name":"1x1.gif","size":43,"extension":".gif","type":"file","mode":33206,"mtime":"2021-01-09T02:47:30.290Z","mtimeMs":1610160450289.9504}],"size":43,"type":"directory"}
+    // e.g {path:"C:/s3uploader/tests/resources",name:"resources",mode:16822,mtime:"2021-01-28T14:38:38.045Z",mtimeMs:1611844718044.9944,children:[{path:"C:/s3uploader/tests/resources/1x1.gif",name:"1x1.gif",size:43,extension:".gif",type:"file",mode:33206,mtime:"2021-01-09T02:47:30.290Z",mtimeMs:1610160450289.9504}],size:43,type:"directory"}
 
     test('works', () => {
 
+        // console.debug("The dirTreeResponse is: ", JSON.stringify(dirTreeResponse));
         expect(localResourcesFolder).toMatch(/resources$/);
         expect(dirTreeResponse).toBeDefined();
         expect(dirTreeResponse).toEqual({
-                "path": expect.any(String), "name": "resources",
-                "mode": expect.any(Number),
-                "mtime": expect.anything(),
-                "mtimeMs": expect.any(Number),
-                "size": 43,
-                "type": "directory",
-                "children":
+                path: expect.any(String),
+                name: "resources",
+                mode: expect.any(Number),
+                mtime: expect.anything(),
+                mtimeMs: expect.any(Number),
+                size: 43,
+                type: "directory",
+                children:
                     [
                         {
                             basePath: expect.any(String), // Inserted by our own code, not by dirTree
-                            "path": expect.any(String),
-                            "name": "1x1.gif",
-                            "size": 43,
-                            "extension": ".gif",
-                            "type": "file",
-                            "mode": expect.any(Number),
-                            "mtime": expect.anything(),
-                            "mtimeMs": expect.any(Number)
+                            path: expect.any(String),
+                            name: "1x1.gif",
+                            size: 43,
+                            extension: ".gif",
+                            type: "file",
+                            mode: expect.any(Number),
+                            mtime: expect.anything(),
+                            mtimeMs: expect.any(Number)
                         }],
             }
         );
@@ -412,23 +414,23 @@ describe('S3 uploading consumer', () => {
 
 
         let s3ListObject = {
-            "IsTruncated": false,
-            "Contents": [{
-                "Key": "testing/1x1.gif",
-                "Size": 64,
-                "LastModified": "2021-01-31T06:44:53.000Z",
-                "ETag": '"d41d8cd98f00b204e9999999fff8427e"',
-                "StorageClass": "STANDARD"
+            IsTruncated: false,
+            Contents: [{
+                Key: "testing/1x1.gif",
+                Size: 64,
+                LastModified: "2021-01-31T06:44:53.000Z",
+                ETag: '"d41d8cd98f00b204e9999999fff8427e"',
+                StorageClass: "STANDARD"
             }],
-            "Name": "testing-s3uploader",
-            "Prefix": "testing/1x1.gif",
-            "MaxKeys": 1,
-            "CommonPrefixes": [],
-            "KeyCount": 1
+            Name: "testing-s3uploader",
+            Prefix: "testing/1x1.gif",
+            MaxKeys: 1,
+            CommonPrefixes: [],
+            KeyCount: 1
         };
         let s3ListObjectNoFile = {
-            "Contents": [],
-            "Prefix": "testing/1x1.gif",
+            Contents: [],
+            Prefix: "testing/1x1.gif",
         };
         let fsStat = {
             dev: 1733172691,
@@ -453,15 +455,15 @@ describe('S3 uploading consumer', () => {
         let fsStatSameSize = _.merge({}, fsStat, {size: s3ListObject.Contents[0].Size});
         let sha256OfLocalFile = '3331a0486cb3e8a75c8c2fdf02bf80fd8fe2b811dfe5c7b4aa892d38bfcf604a';
         let s3ObjectTags = {
-            "TagSet": [{
-                "Key": "s3UploaderSHA256",
-                "Value": "3331a0486cb3e8a75c8c2fdf02bf80fd8fe2b811dfe5c7b4aa892d38bfcf604a"
+            TagSet: [{
+                Key: "s3UploaderSHA256",
+                Value: "3331a0486cb3e8a75c8c2fdf02bf80fd8fe2b811dfe5c7b4aa892d38bfcf604a"
             }]
         };
         let s3ObjectTagsDifferentSha = _.merge({}, s3ObjectTags);
         s3ObjectTagsDifferentSha.TagSet[0].Value = 'INVALIDSHA256aaaa3331a0486cbc8c2fdf02bf80fd8f7b4aa892d38bfcf604a';
         let s3ObjectNoTags = {
-            "TagSet": []
+            TagSet: []
         }
 
 
@@ -552,8 +554,8 @@ describe('S3 uploading consumer', () => {
                 ETag: expect.any(String), // e.g "d41d8cd98f00b204e9800998ecf8427e"
                 ServerSideEncryption: expect.any(String), // If you have it enabled it's likely AES256
             },
-            uploadProcessingTime: expect.any(Number), // e.g 4123
-            treeEntry: expect.anything(),
+            uploadProcessingTime: expect.any(String), // e.g "0.908s"
+            queueEntry: expect.anything(),
             uploadOptions: {
                 partSize: 10485760,
                 queueSize: 4,
@@ -564,6 +566,33 @@ describe('S3 uploading consumer', () => {
                     },
                 ],
             },
+            processingTime: expect.any(String), // e.g "1.911s"
+            s3ListObject: {
+                CommonPrefixes: [],
+                Contents: [
+                    {
+                        ETag: expect.any(String), // e.g  "\"968c3ad2d1184fee0bf0dd479f7904b7\""
+                        Key: "testing/1x1.gif",
+                        LastModified: expect.any(Date), // e.g Date('2021-02-06T18:08:00.000Z')
+                        Size: 43,
+                        StorageClass: "STANDARD",
+                    },
+                ],
+                IsTruncated: false,
+                KeyCount: 1,
+                MaxKeys: 1,
+                Name: "testing-s3uploader",
+                Prefix: "testing/1x1.gif",
+            },
+            s3ObjectTags: {
+                TagSet: [
+                    {
+                        Key: "s3UploaderSHA256",
+                        Value: "3331a0486cb3e8a75c8c2fdf02bf80fd8fe2b811dfe5c7b4aa892d38bfcf604a",
+                    },
+                ],
+            },
+            sha256OfLocalFile: "3331a0486cb3e8a75c8c2fdf02bf80fd8fe2b811dfe5c7b4aa892d38bfcf604a",
         });
 
         await queueManager.drained(); // Want to see the consumers status be set to idle
@@ -587,8 +616,46 @@ describe('S3 uploading consumer', () => {
         await expect(queueManager.addToQueue(queueEntry)).resolves.toEqual({
             uploaded: false,
             shouldUploadFile: false,
-            localFilePath: expect.any(String),
-            treeEntry: expect.any(Object),
+            localFilePath: expect.any(String), // e.g "C:\\s3uploader\\tests\\resources\\1x1.gif",
+            processingTime: expect.any(String), // e.g "0.947s",
+            s3ListObject: {
+                CommonPrefixes: [],
+                Contents: [
+                    {
+                        ETag: expect.any(String),// e.g "\"968c3ad2c1183fee0bf0dd479f7904b7\"",
+                        Key: "testing/1x1.gif",
+                        LastModified: expect.any(Date), //e .g Date('2021-02-06T18:12:20.000Z'),
+                        Size: 43,
+                        StorageClass: "STANDARD"
+                    }
+                ],
+                IsTruncated: false,
+                KeyCount: 1,
+                MaxKeys: 1,
+                Name: "testing-s3uploader",
+                Prefix: "testing/1x1.gif"
+            },
+            s3ObjectTags: {
+                TagSet: [
+                    {
+                        Key: "s3UploaderSHA256",
+                        Value: "3331a0486cb3e8a75c8c2fdf02bf80fd8fe2b811dfe5c7b4aa892d38bfcf604a"
+                    }
+                ]
+            },
+            sha256OfLocalFile: "3331a0486cb3e8a75c8c2fdf02bf80fd8fe2b811dfe5c7b4aa892d38bfcf604a",
+            queueEntry: {
+                __completedQueueTaskPromise: expect.anything(),
+                basePath: expect.any(String),// e.g "C:/s3uploader/tests/resources",
+                extension: ".gif",
+                mode: expect.anything(), // e.g 33206,
+                mtime: expect.anything(),
+                mtimeMs: expect.any(Number), // e.g 1610160450289.9504,
+                name: "1x1.gif",
+                path: expect.any(String), // e.g "C:/s3uploader/tests/resources/1x1.gif",
+                size: 43,
+                type: "file"
+            },
         });
     });
 
@@ -604,19 +671,19 @@ describe('S3 uploading consumer', () => {
         });
         let invalidQueueEntry = _.merge({}, queueEntry, {
             path: path.join(__dirname, '123456789 this is an invalid_file.notAtxt'),
-            "name": '123456789 this is an invalid_file.notAtxt'
+            name: '123456789 this is an invalid_file.notAtxt'
         });
         queueManager = new QueueManager(s3ConsumerSettingsDontOverwrite, {OUTPUT_ERRORS: false,});
         queueManager.start();
         return expect(queueManager.addToQueue(invalidQueueEntry)).rejects.toEqual({
-            "mainError": expect.anything()
+            mainError: expect.anything()
         });
         // e.g
         // Error({
-        //     "code": "ENOENT",
-        //     "errno": -4058,
-        //     "path": invalidQueueEntry.path,
-        //     "syscall": "stat",
+        //     code: "ENOENT",
+        //     errno: -4058,
+        //     path: invalidQueueEntry.path,
+        //     syscall: "stat",
         // })
 
 
@@ -625,4 +692,5 @@ describe('S3 uploading consumer', () => {
     test.todo('Setup console logging of the activity log entries');
     test.todo('Get custom queue consumer\'s being included if they can be found?');
     test.todo('Setup DELETE_ON_UPLOAD');
-});
+})
+;

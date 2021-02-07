@@ -45,16 +45,36 @@ class QueueConsumerS3 extends QueueConsumerBase {
         S3_UPLOAD_ACL: 'bucket-owner-full-control' // The canned ACL to apply to the upload. Possible values include: "private" "public-read" "public-read-write" "authenticated-read" "aws-exec-read" "bucket-owner-read" "bucket-owner-full-control"
     }
 
-    processQueueEntry = async (treeEntry) => {
+    processQueueEntry = async (queueEntry) => {
+
+        /*
+        Example queueEntry is:
+        {
+          "path": "C:/s3uploader/tests/resources/1x1.gif",
+          "name": "1x1.gif",
+          "size": 43,
+          "extension": ".gif",
+          "type": "file",
+          "mode": 33206,
+          "mtime": "2021-01-09T02:47:30.290Z",
+          "mtimeMs": 1610160450289.9504,
+          "basePath": "C:/s3uploader/tests/resources", // added in from the dirTree root entry, not there by default in dirTree for a child entry
+          "__completedQueueTaskPromise": {
+            "_promise": {}
+          }
+        }
+         */
 
         return new Promise((resolve, reject) => {
             let processingTimeStarted = new Date();
-            const basePath = treeEntry.basePath;
+            const basePath = queueEntry.basePath;
+
+
 
             let s3BucketFolder = this.config.AWS_S3_BUCKET_FOLDER;
             let s3BucketName = this.config.AWS_S3_BUCKET;
-            let uploadLocationKey = s3BucketFolder + treeEntry.path.replace(basePath, ''); // @todo: remove basePath from treeEntry
-            let localFilePath = path.join(treeEntry.path); // Convert to a local filepath that fs can read
+            let uploadLocationKey = s3BucketFolder + queueEntry.path.replace(basePath, ''); // @todo: remove basePath from the queueEntry ( treeEntry )
+            let localFilePath = path.join(queueEntry.path); // Convert to a local filepath that fs can read
 
 
             let sha256FilePromise = new DeferredPromise();
@@ -98,13 +118,6 @@ class QueueConsumerS3 extends QueueConsumerBase {
                 sha256FilePromise.resolve(sha256);
             });
 
-
-            // resolve({
-            //     localFilePath,
-            //     uploadParams,
-            //     treeEntry
-            // });
-
             // -- Create S3 service object
             let s3;
             if (this.config.s3) {
@@ -136,21 +149,21 @@ class QueueConsumerS3 extends QueueConsumerBase {
 
                       An error occurred: S3 listObjectsV2 for testing/1x1.gif
                       NoSuchKey: The specified key does not exist.
-                        at Request.extractError (C:\Vagrant\MDKs\greyphoenixproductions\s3uploader\node_modules\aws-sdk\lib\services\s3.js:700:35)
-                        at Request.callListeners (C:\Vagrant\MDKs\greyphoenixproductions\s3uploader\node_modules\aws-sdk\lib\sequential_executor.js:106:20)
-                        at Request.emit (C:\Vagrant\MDKs\greyphoenixproductions\s3uploader\node_modules\aws-sdk\lib\sequential_executor.js:78:10)
-                        at Request.emit (C:\Vagrant\MDKs\greyphoenixproductions\s3uploader\node_modules\aws-sdk\lib\request.js:688:14)
-                        at Request.transition (C:\Vagrant\MDKs\greyphoenixproductions\s3uploader\node_modules\aws-sdk\lib\request.js:22:10)
-                        at AcceptorStateMachine.runTo (C:\Vagrant\MDKs\greyphoenixproductions\s3uploader\node_modules\aws-sdk\lib\state_machine.js:14:12)
-                        at C:\Vagrant\MDKs\greyphoenixproductions\s3uploader\node_modules\aws-sdk\lib\state_machine.js:26:10
-                        at Request.<anonymous> (C:\Vagrant\MDKs\greyphoenixproductions\s3uploader\node_modules\aws-sdk\lib\request.js:38:9)
-                        at Request.<anonymous> (C:\Vagrant\MDKs\greyphoenixproductions\s3uploader\node_modules\aws-sdk\lib\request.js:690:12)
-                        at Request.callListeners (C:\Vagrant\MDKs\greyphoenixproductions\s3uploader\node_modules\aws-sdk\lib\sequential_executor.js:116:18) {
+                        at Request.extractError (C:\s3uploader\node_modules\aws-sdk\lib\services\s3.js:700:35)
+                        at Request.callListeners (C:\s3uploader\node_modules\aws-sdk\lib\sequential_executor.js:106:20)
+                        at Request.emit (C:\s3uploader\node_modules\aws-sdk\lib\sequential_executor.js:78:10)
+                        at Request.emit (C:\s3uploader\node_modules\aws-sdk\lib\request.js:688:14)
+                        at Request.transition (C:\s3uploader\node_modules\aws-sdk\lib\request.js:22:10)
+                        at AcceptorStateMachine.runTo (C:\s3uploader\node_modules\aws-sdk\lib\state_machine.js:14:12)
+                        at C:\s3uploader\node_modules\aws-sdk\lib\state_machine.js:26:10
+                        at Request.<anonymous> (C:\s3uploader\node_modules\aws-sdk\lib\request.js:38:9)
+                        at Request.<anonymous> (C:\s3uploader\node_modules\aws-sdk\lib\request.js:690:12)
+                        at Request.callListeners (C:\s3uploader\node_modules\aws-sdk\lib\sequential_executor.js:116:18) {
                       code: 'NoSuchKey',
                       region: null,
                       time: 2021-02-01T06:14:12.191Z,
                       requestId: '2C63F2B6EDD0747E',
-                      extendedRequestId: 'FI4cFX5OllM5fgYuSvzr8WQrAhr1xmPiq9dPU5elihxhmycuorkcYOTU4qvtnAsBNg8gCRa4pVg=',
+                      extendedRequestId: 'FI4dFX5OllN5fgYuSvzr8WQrAhr1xmPiq9dPU5elihxhmycuorkcYOTU4qvtnAsBNg8gCRa4pVg=',
                       cfId: undefined,
                       statusCode: 404,
                       retryable: false,
@@ -198,7 +211,7 @@ class QueueConsumerS3 extends QueueConsumerBase {
                         uploaded: false,
                         shouldUploadFile: false,
                         localFilePath,
-                        treeEntry,
+                        queueEntry,
                         s3ListObject,
                         sha256OfLocalFile,
                         s3ObjectTags,
@@ -213,8 +226,8 @@ class QueueConsumerS3 extends QueueConsumerBase {
                     Body: '', // To be set to the stream later on
                     ACL: this.config.S3_UPLOAD_ACL,
                     StorageClass: this.config.S3_UPLOAD_STORAGE_CLASS,
-                    // NB: We allow the treeEntry to contain a specific s3UploadParams if you really want to do something special like setting a WebsiteRedirectLocation or SSECustomerKeyMD5 which would be per file specific. Probably best sorted out in the preProcessEntry
-                }, _.get(treeEntry, 's3UploadParams', {}));
+                    // NB: We allow the queueEntry to contain a specific s3UploadParams if you really want to do something special like setting a WebsiteRedirectLocation or SSECustomerKeyMD5 which would be per file specific. Probably best sorted out in the preProcessEntry
+                }, _.get(queueEntry, 's3UploadParams', {}));
 
                 let uploadOptions = _.merge({
                     // Check https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/S3.html#upload-property for more options and
@@ -226,14 +239,14 @@ class QueueConsumerS3 extends QueueConsumerBase {
                         Key: 's3UploaderSHA256',
                         Value: sha256OfLocalFile
                     }]),
-                }, _.get(treeEntry, 's3UploadOptions', {}));
+                }, _.get(queueEntry, 's3UploadOptions', {}));
 
 
                 this.addActivity(`Uploading the file to S3 ${uploadLocationKey}`, {
                     localFilePath,
                     uploadParams,
                     uploadOptions,
-                    treeEntry,
+                    queueEntry,
                     fsStat, sha256OfLocalFile, s3ListObject, s3ObjectTags
                 });
 
@@ -273,7 +286,7 @@ class QueueConsumerS3 extends QueueConsumerBase {
                             s3ListObject,
                             sha256OfLocalFile,
                             s3ObjectTags,
-                            treeEntry,
+                            queueEntry,
                         });
                         /* e.g data:  {
                           ETag: '"958c6ad2c1183fee0bf0dd489f4204c7"',
@@ -293,9 +306,52 @@ class QueueConsumerS3 extends QueueConsumerBase {
         });
     }
 
-    postProcessEntry = async (queueEntry, processQueueResponse) => {
-        // @todo: Remove the local file if DELETE_ON_UPLOAD=true
-        return queueEntry;
+    /**
+     * Should return the queueEntry
+     * @param queueEntry
+     * @param processQueueResponse
+     * @param error
+     * @returns {Promise<boolean|*>}
+     */
+    postProcessEntry = async (queueEntry, processQueueResponse, error) => {
+        if (!_.isEmpty(error)) {
+            // There was a pre or main processing error
+            // You likely don't want to do anything important like deleting files if that's the case
+            this.addActivity('As there was an error, not postProcessing the ' + this.identQueueEntry(queueEntry));
+            return queueEntry;
+        }
+
+        let localFilePath = _.get(processQueueResponse, 'localFilePath', path.join(queueEntry.path)); // Convert to a local filepath that fs can read
+        if (true === _.get(this.config, 'DELETE_ON_UPLOAD', false)) {
+
+            fs.promises.unlink(localFilePath).then(() => {
+                queueEntry.deleted = true;
+                this.addActivity('Deleted the file ' + this.identQueueEntry(queueEntry));
+                return queueEntry;
+            }).catch((err) => {
+                this.addError(err, 'Issue when trying to post process delete the file ' + this.identQueueEntry(queueEntry));
+                queueEntry.deleted = false;
+                // return queueEntry;
+                throw err;
+            });
+            // @todo: Delete the file, or error if it can't be deleted.
+            // @todo: Remove the local file if DELETE_ON_UPLOAD=true
+
+        } else {
+            return queueEntry;
+        }
+    }
+
+    identQueueEntry(queueEntry) {
+        if (_.isEmpty(queueEntry)) {
+            return 'Empty Queue Entry';
+        }
+
+        let queueEntryIdent = 'Queue Entry ';
+        if (_.get(queueEntry, 'path')) {
+            return queueEntryIdent + _.get(queueEntry, 'path');
+        }
+
     }
 
     /**
@@ -306,6 +362,7 @@ class QueueConsumerS3 extends QueueConsumerBase {
      * @param sha256OfLocalFile {String} e.g '3331a0486cb3e8a75c8c2fdf02bf80fd8fe2b811dfe5c7b4aa892d38bfcf604a'
      * @param s3ObjectTags {Object} e.g { TagSet: [] } if empty or hopefully {"TagSet":[{"Key":"s3UploaderSHA256","Value":"3331a0486cb3e8a75c8c2fdf02bf80fd8fe2b811dfe5c7b4aa892d38bfcf604a"}]}
      * @returns {boolean}
+     *
      */
     shouldUploadFile = async (s3ListObject, fsStat, sha256OfLocalFile, s3ObjectTags) => {
         let fileEntryS3 = _.get(s3ListObject, 'Contents.0');
@@ -392,3 +449,29 @@ class QueueConsumerS3 extends QueueConsumerBase {
 
 
 module.exports = QueueConsumerS3;
+
+/*
+Example dirTree that is used to create the queue entries is:
+{
+    "path": "C:/s3uploader/tests/resources",
+    "name": "resources",
+    "mode": 16822,
+    "mtime": "2021-01-28T14:38:38.045Z",
+    "mtimeMs": 1611844718044.9944,
+    "children": [
+    {
+        "path": "C:/s3uploader/tests/resources/1x1.gif",
+        "name": "1x1.gif",
+        "size": 43,
+        "extension": ".gif",
+        "type": "file",
+        "mode": 33206,
+        "mtime": "2021-01-09T02:47:30.290Z",
+        "mtimeMs": 1610160450289.9504,
+    }
+],
+    "size": 43,
+    "type": "directory"
+}
+
+ */

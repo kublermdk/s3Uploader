@@ -115,12 +115,12 @@ class QueueConsumerBase extends QueueAndConsumerBase {
             return null;
         }
 
-        this.setStatus(this.statuses.processing);
         this.processingStarted = new Date();
         // console.log("Processing queueEntry", queueEntry);
 
         // Pre-Process
         let error = {};
+        this.setStatus(this.statuses.preprocessing);
         queueEntry = await this.preProcessEntry(queueEntry, error).catch(err => {
             this.addError(err);
             error.preProcessError = err;
@@ -130,12 +130,13 @@ class QueueConsumerBase extends QueueAndConsumerBase {
         //   The main process!
         // ----------------------------
 
-
+        this.setStatus(this.statuses.processing);
         let processedQueueResponse = await this.processQueueEntry(queueEntry, error).catch(err => {
             error.mainError = err;
             this.addError(err);
         }); // Run the actual main part
 
+        this.setStatus(this.statuses.postprocessing);
         queueEntry = await this.postProcessEntry(queueEntry, processedQueueResponse, error).catch(err => {
             error.postProcessError = err;
             this.addError(err);

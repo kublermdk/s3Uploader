@@ -31,7 +31,9 @@ class QueueAndConsumerBase {
         'init': 'init', // Initialising
         'starting': 'starting', // Creating the consumers and will start consuming the queue if there's any entries
         'started': 'started', // The consumers have been created but aren't yet processing anything
+        'preprocessing': 'preprocessing', // The main state, it's actually working
         'processing': 'processing', // The main state, it's actually working
+        'postprocessing': 'postprocessing', // The main state, it's actually working
         'processed': 'processed', // Just finished processing, will now check if there's another item or if it'll be idle
         'idle': 'idle', // When there's nothing to process (queue is empty)
         'pausing': 'pausing', // Stopping the consumers, they won't grab any new queue items
