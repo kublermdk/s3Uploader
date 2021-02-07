@@ -203,7 +203,7 @@ class QueueConsumerBase extends QueueAndConsumerBase {
 
     /**
      * Run after the queue entry has been processed
-     * In the S3 uploader this is the method where the file is deleted if DELETE_ON_UPLOAD=true
+     * In the S3 uploader this is the method where the file is deleted if DELETE_ON_PROCESSED=true
      *
      * This is provided both the original queueEntry and the processQueueResponse (the response from the processQueueEntry)
      * @param queueEntry

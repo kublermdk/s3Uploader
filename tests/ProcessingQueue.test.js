@@ -1,9 +1,14 @@
 const QueueManager = require('../QueueManager.js');
 const QueueConsumerS3 = require('../QueueConsumerS3.js');
 const QueueConsumerTest = require('./QueueConsumerTest.js');
+const os = require('os');
+const fs = require('fs');
+// const fsPromises = fs.promises;
 const dirTree = require("directory-tree");
 const DeferredPromise = require('../DeferredPromise.js');
 const path = require('path');
+const {sep} = require('path');
+const tmpDir = os.tmpdir();
 const _ = require('lodash');
 require('dotenv').config(); // Load env vars https://www.npmjs.com/package/dotenv
 
@@ -390,7 +395,7 @@ describe('S3 uploading consumer', () => {
     }
     let queueManager = new QueueManager(s3ConsumerSettings);
 
-    const queueEntry = dirTreeResponse.children[0];
+    let queueEntry = dirTreeResponse.children[0];
     queueEntry.basePath = dirTreeResponse.path;
     const Key = s3ConsumerSettings.consumerConfig.AWS_S3_BUCKET_FOLDER + "/1x1.gif";
     const Location = `https://${s3ConsumerSettings.consumerConfig.AWS_S3_BUCKET}.s3.${s3ConsumerSettings.consumerConfig.AWS_REGION}.amazonaws.com/${Key}`;
@@ -513,93 +518,170 @@ describe('S3 uploading consumer', () => {
 
     });
 
-    test('1x1.gif uploads', async () => {
-        // Make sure we are only processing a single 1x1.gif
-        expect(dirTreeResponse.children.length).toEqual(1);
-        expect(dirTreeResponse.children[0].name).toEqual("1x1.gif");
 
+    describe('actual upload', () => {
+        // Delete the temporary file and folder
 
-        expect(process.env.AWS_PROFILE_TESTING).toBeDefined();
-        expect(process.env.AWS_S3_BUCKET_TESTING).toBeDefined();
-        expect(process.env.AWS_S3_BUCKET_FOLDER_TESTING).toBeDefined();
+        afterAll(() => {
+            if (tempTestFile) {
 
-        // e.g in .env you might have:
-        // AWS_PROFILE_TESTING=testing
-        // AWS_S3_BUCKET_TESTING=testing-s3uploader
-        // AWS_S3_BUCKET_FOLDER_TESTING=testing
+                // If the file wasn't removed
+                try {
 
-        // -- We want to ensure the file is overwritten even if it exists
-        let s3ConsumerSettingsOverwriteTrue = _.merge({}, s3ConsumerSettings, {consumerConfig: {OVERWRITE: true}});
-        expect(s3ConsumerSettingsOverwriteTrue.consumerConfig.OVERWRITE).toEqual(true);
-        queueManager = new QueueManager(s3ConsumerSettingsOverwriteTrue); // Reset it in case the other tests have modified the consumer, etc..
-        expect(queueManager.consumers.length).toEqual(1);
-        queueManager.start();
+                    if (undefined === fs.accessSync(tempTestFile)) {
+                        fs.unlinkSync(tempTestFile);
+                        console.warn(`The tempTestFile ${tempTestFile} wasn't deleted by the s3 uploader so did that afterwards as part of the cleanup`);
+                    }
+                } catch (err) {
+                    // Doesn't matter was already removed which is good
+                }
 
-        // -- Actually process the queue!
-        let entryResult = await queueManager.addToQueue(queueEntry).catch(err => {
-            console.error("=== TESTING ERROR == ", err);
-            expect('It errored').toBe(err);
-        }); // NB: This doesn't resolve if the queueManger isn't started already
+                try {
 
-        await queueManager.drained();
-
-        expect(entryResult).toEqual({
-            uploaded: true,
-            localFilePath: expect.any(String),
-            data: {
-                Bucket: s3ConsumerSettings.consumerConfig.AWS_S3_BUCKET,
-                Key,
-                key: Key,
-                Location,
-                ETag: expect.any(String), // e.g "d41d8cd98f00b204e9800998ecf8427e"
-                ServerSideEncryption: expect.any(String), // If you have it enabled it's likely AES256
-            },
-            uploadProcessingTime: expect.any(String), // e.g "0.908s"
-            queueEntry: expect.anything(),
-            uploadOptions: {
-                partSize: 10485760,
-                queueSize: 4,
-                tags: [
-                    {
-                        Key: "s3UploaderSHA256",
-                        Value: "3331a0486cb3e8a75c8c2fdf02bf80fd8fe2b811dfe5c7b4aa892d38bfcf604a",
-                    },
-                ],
-            },
-            processingTime: expect.any(String), // e.g "1.911s"
-            s3ListObject: {
-                CommonPrefixes: [],
-                Contents: [
-                    {
-                        ETag: expect.any(String), // e.g  "\"968c3ad2d1184fee0bf0dd479f7904b7\""
-                        Key: "testing/1x1.gif",
-                        LastModified: expect.any(Date), // e.g Date('2021-02-06T18:08:00.000Z')
-                        Size: 43,
-                        StorageClass: "STANDARD",
-                    },
-                ],
-                IsTruncated: false,
-                KeyCount: 1,
-                MaxKeys: 1,
-                Name: "testing-s3uploader",
-                Prefix: "testing/1x1.gif",
-            },
-            s3ObjectTags: {
-                TagSet: [
-                    {
-                        Key: "s3UploaderSHA256",
-                        Value: "3331a0486cb3e8a75c8c2fdf02bf80fd8fe2b811dfe5c7b4aa892d38bfcf604a",
-                    },
-                ],
-            },
-            sha256OfLocalFile: "3331a0486cb3e8a75c8c2fdf02bf80fd8fe2b811dfe5c7b4aa892d38bfcf604a",
+                    if (undefined === fs.accessSync(tempFolder)) {
+                        fs.rmdirSync(tempFolder);
+                        console.log("Deleted the temporary folder: ", {tempFolder});
+                    } else {
+                        console.log("Temp folder already deleted ", {tempFolder});
+                    }
+                } catch (err) {
+                    // Doesn't matter was already removed which is good
+                    console.log(`Issue deleting the temporary folder: ${tempFolder} `, err);
+                }
+            } else {
+                console.error("Looks like a major error occurred and the test '1x1.gif uploads and deletes local file' didn't run correctly");
+            }
         });
 
-        await queueManager.drained(); // Want to see the consumers status be set to idle
+        // =======================================================================================================
+        //      Actually Upload the 1x1.gif file
+        // =======================================================================================================
+        test('1x1.gif uploads and deletes local file', async () => {
+
+
+            // We are also testing DELETE_ON_PROCESSED so copy the file into a temp directory and check it gets removed
+            // -- Temp folder init
+            // Check https://nodejs.org/api/fs.html#fs_fs_mkdtemp_prefix_options_callback for more information about temporary directory creation
+            let tempFolder = fs.mkdtempSync(`${tmpDir}${sep}`);
+            console.log('1x1.gif is being uploaded from the temporary directory: ', {tempFolder});
+
+            let originalTestFile = path.join(__dirname, 'resources/1x1.gif');
+            let tempTestFile = path.join(tempFolder, `${sep}1x1.gif`);
+
+            fs.copyFileSync(originalTestFile, tempTestFile);
+            expect(fs.accessSync(tempTestFile, fs.constants.F_OK)).toEqual(undefined); // It's a worry if it throws an error
+
+            // e.g /tmp/5hM2HY
+            let dirTreeResponseTempFolder = dirTree(tempFolder, dirTreeOptions);
+
+            // Make sure we are only processing a single 1x1.gif
+            expect(dirTreeResponseTempFolder.children.length).toEqual(1);
+            expect(dirTreeResponseTempFolder.children[0].name).toEqual("1x1.gif");
+
+
+            expect(process.env.AWS_PROFILE_TESTING).toBeDefined();
+            expect(process.env.AWS_S3_BUCKET_TESTING).toBeDefined();
+            expect(process.env.AWS_S3_BUCKET_FOLDER_TESTING).toBeDefined();
+
+            let queueEntryTempFile = dirTreeResponseTempFolder.children[0];
+            queueEntryTempFile.basePath = dirTreeResponseTempFolder.path;
+
+            // e.g in .env you might have:
+            // AWS_PROFILE_TESTING=testing
+            // AWS_S3_BUCKET_TESTING=testing-s3uploader
+            // AWS_S3_BUCKET_FOLDER_TESTING=testing
+
+            // -- We want to ensure the file is overwritten on S3 even if it exists and it's then deleted locally
+            let s3ConsumerSettingsOverwriteTrue = _.merge({}, s3ConsumerSettings, {
+                consumerConfig: {
+                    OVERWRITE: true,
+                    DELETE_ON_PROCESSED: true
+                }
+            });
+            expect(s3ConsumerSettingsOverwriteTrue.consumerConfig.OVERWRITE).toEqual(true);
+            queueManager = new QueueManager(s3ConsumerSettingsOverwriteTrue); // Reset it in case the other tests have modified the consumer, etc..
+            expect(queueManager.consumers.length).toEqual(1);
+            queueManager.start();
+
+            // -- Actually process the queue!
+            let entryResult = await queueManager.addToQueue(queueEntryTempFile).catch(err => {
+                console.error("=== TESTING ERRORED == ", err);
+                expect('It errored').toBe(err);
+            }); // NB: This doesn't resolve if the queueManger isn't already started
+
+            // await queueManager.drained();
+            // console.log('1x1.gif uploads then is deleted ', queueManager.consumers[0].activity);
+            expect(entryResult).toEqual({
+                uploaded: true,
+                localFilePath: expect.any(String),
+                data: {
+                    Bucket: s3ConsumerSettings.consumerConfig.AWS_S3_BUCKET,
+                    Key,
+                    key: Key,
+                    Location,
+                    ETag: expect.any(String), // e.g "d41d8cd98f00b204e9800998ecf8427e"
+                    ServerSideEncryption: expect.any(String), // If you have it enabled it's likely AES256
+                },
+                uploadProcessingTime: expect.any(String), // e.g "0.908s"
+                "queueEntry": {
+                    "__completedQueueTaskPromise": expect.anything(),
+                    "basePath": expect.any(String), // e.g "/tmp/rjswCg"
+                    "deleted": true,
+                    "extension": ".gif",
+                    "mode": expect.anything(),
+                    "mtime": expect.anything(),
+                    "mtimeMs": expect.any(Number),
+                    "name": "1x1.gif",
+                    "path": expect.any(String), // e.g "/tmp/rjswCg/1x1.gif"
+                    "postProcessingCompleted": true,
+                    "size": 43,
+                    "type": "file"
+                },
+                uploadOptions: {
+                    partSize: 10485760,
+                    queueSize: 4,
+                    tags: [
+                        {
+                            Key: "s3UploaderSHA256",
+                            Value: "3331a0486cb3e8a75c8c2fdf02bf80fd8fe2b811dfe5c7b4aa892d38bfcf604a",
+                        },
+                    ],
+                },
+                processingTime: expect.any(String), // e.g "1.911s"
+                s3ListObject: {
+                    CommonPrefixes: [],
+                    Contents: [
+                        {
+                            ETag: expect.any(String), // e.g  "\"968c3ad2d1184fee0bf0dd479f7904b7\""
+                            Key: "testing/1x1.gif",
+                            LastModified: expect.any(Date), // e.g Date('2021-02-06T18:08:00.000Z')
+                            Size: 43,
+                            StorageClass: "STANDARD",
+                        },
+                    ],
+                    IsTruncated: false,
+                    KeyCount: 1,
+                    MaxKeys: 1,
+                    Name: "testing-s3uploader",
+                    Prefix: "testing/1x1.gif",
+                },
+                s3ObjectTags: {
+                    TagSet: [
+                        {
+                            Key: "s3UploaderSHA256",
+                            Value: "3331a0486cb3e8a75c8c2fdf02bf80fd8fe2b811dfe5c7b4aa892d38bfcf604a",
+                        },
+                    ],
+                },
+                sha256OfLocalFile: "3331a0486cb3e8a75c8c2fdf02bf80fd8fe2b811dfe5c7b4aa892d38bfcf604a",
+            });
+
+
+        });
 
     });
 
-    test('same 1x1.gif doesn\'t get overridden', async () => {
+    test('same file doesn\'t get overridden', async () => {
 
         let s3ConsumerSettingsDontOverwrite = _.merge({}, s3ConsumerSettings, {
             consumerInfo: {
@@ -691,6 +773,6 @@ describe('S3 uploading consumer', () => {
 
     test.todo('Setup console logging of the activity log entries');
     test.todo('Get custom queue consumer\'s being included if they can be found?');
-    test.todo('Setup DELETE_ON_UPLOAD');
+    test.todo('Setup DELETE_ON_PROCESSED');
 })
 ;

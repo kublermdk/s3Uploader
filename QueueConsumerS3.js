@@ -70,7 +70,6 @@ class QueueConsumerS3 extends QueueConsumerBase {
             const basePath = queueEntry.basePath;
 
 
-
             let s3BucketFolder = this.config.AWS_S3_BUCKET_FOLDER;
             let s3BucketName = this.config.AWS_S3_BUCKET;
             let uploadLocationKey = s3BucketFolder + queueEntry.path.replace(basePath, ''); // @todo: remove basePath from the queueEntry ( treeEntry )
@@ -308,38 +307,47 @@ class QueueConsumerS3 extends QueueConsumerBase {
 
     /**
      * Should return the queueEntry
+     *
      * @param queueEntry
      * @param processQueueResponse
      * @param error
      * @returns {Promise<boolean|*>}
      */
-    postProcessEntry = async (queueEntry, processQueueResponse, error) => {
-        if (!_.isEmpty(error)) {
-            // There was a pre or main processing error
-            // You likely don't want to do anything important like deleting files if that's the case
-            this.addActivity('As there was an error, not postProcessing the ' + this.identQueueEntry(queueEntry));
-            return queueEntry;
-        }
+    postProcessEntry = (queueEntry, processQueueResponse, error) => {
+        return new Promise((resolve, reject) => {
 
-        let localFilePath = _.get(processQueueResponse, 'localFilePath', path.join(queueEntry.path)); // Convert to a local filepath that fs can read
-        if (true === _.get(this.config, 'DELETE_ON_UPLOAD', false)) {
+            if (!_.isEmpty(error)) {
+                // There was a pre or main processing error
+                // You likely don't want to do anything important like deleting files if that's the case
+                this.addActivity('As there was an error in previous processing, not postProcessing the ' + this.identQueueEntry(queueEntry));
+                // console.warn('As there was an error, not postProcessing the ' + this.identQueueEntry(queueEntry));
+                queueEntry.postProcessingCompleted = false;
+                resolve(queueEntry);
+            }
 
-            fs.promises.unlink(localFilePath).then(() => {
-                queueEntry.deleted = true;
-                this.addActivity('Deleted the file ' + this.identQueueEntry(queueEntry));
-                return queueEntry;
-            }).catch((err) => {
-                this.addError(err, 'Issue when trying to post process delete the file ' + this.identQueueEntry(queueEntry));
-                queueEntry.deleted = false;
-                // return queueEntry;
-                throw err;
-            });
-            // @todo: Delete the file, or error if it can't be deleted.
-            // @todo: Remove the local file if DELETE_ON_UPLOAD=true
+            let localFilePath = _.get(processQueueResponse, 'localFilePath', path.join(queueEntry.path)); // Convert to a local filepath that fs can read
+            if (true === _.get(this.config, 'DELETE_ON_PROCESSED', false)) {
+                // console.log('Going to delete the file ' + this.identQueueEntry(queueEntry));
+                fs.promises.unlink(localFilePath).then(() => {
+                    queueEntry.deleted = true;
+                    queueEntry.postProcessingCompleted = true;
+                    this.addActivity('Deleted the file ' + this.identQueueEntry(queueEntry));
+                    // console.warn('Deleted the file ' + this.identQueueEntry(queueEntry));
+                    resolve(queueEntry);
+                }).catch((err) => {
+                    this.addError(err, 'Issue when trying to post process delete the file ' + this.identQueueEntry(queueEntry));
+                    queueEntry.deleted = false;
+                    queueEntry.postProcessingCompleted = false;
+                    // return queueEntry;
+                    reject(err);
+                });
 
-        } else {
-            return queueEntry;
-        }
+            } else {
+                queueEntry.postProcessingCompleted = true;
+                resolve(queueEntry);
+            }
+
+        });
     }
 
     identQueueEntry(queueEntry) {
