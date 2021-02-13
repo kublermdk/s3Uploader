@@ -5,6 +5,7 @@ const fsPromises = fs.promises;
 const path = require('path');
 const dirTree = require("directory-tree");
 const DeferredPromise = require('./DeferredPromise.js');
+const DirectoryTreePlus = require('./DeferredPromise.js');
 const QueueManager = require('./QueueManager.js');
 const QueueConsumerS3 = require('./QueueConsumerS3.js');
 const _ = require('lodash');
@@ -211,33 +212,6 @@ Promise.all([canAccessLocalFolderPromise, checkAwsCredentialsPromise, checkAwsBu
 //   F U N C T I O N S
 // =============================================
 
-const filterOutRecursiveDirectoriesIfNeeded = function (filteredTree) {
-
-    if (recurseFolder === false && filteredTree && filteredTree.children && filteredTree.children.length > 0) {
-
-        filteredTree.children = _.filter(filteredTree.children, treeEntry => {
-            return treeEntry.type !== 'directory';
-        });
-    }
-
-    if (!Array.isArray(filteredTree)) {
-        filteredTree = [filteredTree];
-    }
-    return filteredTree;
-}
-
-const treeOutput = function (filteredTree, indents = '') {
-    let output = '';
-
-    _.each(filteredTree, treeEntry => {
-        // console.debug(treeEntry);
-        output += indents + (treeEntry.type === 'file' ? treeEntry.name : `[ ${treeEntry.name} ]`) + ' ' + fileSizeReadable(treeEntry.size) + "\n"
-        if (treeEntry.type === 'directory' && _.get(treeEntry, 'children.length') > 0) {
-            output += treeOutput(treeEntry.children, `${indents} - `); // Recursive call
-        }
-    });
-    return output;
-}
 
 const fileSizeReadable = function (sizeBytes) {
     if (null === sizeBytes || isNaN(sizeBytes)) {
@@ -263,7 +237,32 @@ const occasionalQueueProcessingStatusUpdates = (updateTimeInMs = 10000) => {
     }, updateTimeInMs);
 }
 //
-const addUploadFilesToQueue = async (queueManager, filteredTree, basePath = localFolder) => {
+
+
+// --------------------------------
+//   Workout Dir Tree Options
+// --------------------------------
+let dirTreeOptions = {
+    attributes: ['mode', 'mtime', 'mtimeMs'],
+    normalizePath: true, // So we can use the same paths for S3
+};
+
+if (process.env.FILE_EXTENSIONS) {
+    dirTreeOptions.extensions = new RegExp('\\.(' + process.env.FILE_EXTENSIONS + ')$');
+}
+
+if (ignoreSelf) {
+    // @todo: Add ignore for the local files
+}
+
+if (localExclude) {
+    dirTreeOptions.exclude = localExclude;
+}
+
+console.debug('dirTreeOptions: ', dirTreeOptions);
+
+
+const addUploadFilesToQueue = async (queueManager, filteredTree) => {
     if (!filteredTree) {
         console.debug("No files to upload");
         return null;
@@ -357,31 +356,6 @@ const addUploadFilesToQueue = async (queueManager, filteredTree, basePath = loca
 
     return uploadedFiles;
 };
-
-
-// --------------------------------
-//   Workout Dir Tree Options
-// --------------------------------
-let dirTreeOptions = {
-    attributes: ['mode', 'mtime', 'mtimeMs'],
-    normalizePath: true, // So we can use the same paths for S3
-};
-
-if (process.env.FILE_EXTENSIONS) {
-    dirTreeOptions.extensions = new RegExp('\\.(' + process.env.FILE_EXTENSIONS + ')$');
-}
-
-if (ignoreSelf) {
-    // @todo: Add ignore for the local files
-}
-
-if (localExclude) {
-    dirTreeOptions.exclude = localExclude;
-}
-
-console.debug('dirTreeOptions: ', dirTreeOptions);
-
-
 // =============================================
 //   Add Initial Files to Queue
 // =============================================

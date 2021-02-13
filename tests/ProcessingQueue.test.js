@@ -332,45 +332,6 @@ describe('Processing Queue', () => {
 });
 
 
-// ====================================================================================
-//     Dir Tree
-// ====================================================================================
-describe('Dir Tree', () => {
-
-
-    // e.g {path:"C:/s3uploader/tests/resources",name:"resources",mode:16822,mtime:"2021-01-28T14:38:38.045Z",mtimeMs:1611844718044.9944,children:[{path:"C:/s3uploader/tests/resources/1x1.gif",name:"1x1.gif",size:43,extension:".gif",type:"file",mode:33206,mtime:"2021-01-09T02:47:30.290Z",mtimeMs:1610160450289.9504}],size:43,type:"directory"}
-
-    test('works', () => {
-
-        // console.debug("The dirTreeResponse is: ", JSON.stringify(dirTreeResponse));
-        expect(localResourcesFolder).toMatch(/resources$/);
-        expect(dirTreeResponse).toBeDefined();
-        expect(dirTreeResponse).toEqual({
-                path: expect.any(String),
-                name: "resources",
-                mode: expect.any(Number),
-                mtime: expect.anything(),
-                mtimeMs: expect.any(Number),
-                size: 43,
-                type: "directory",
-                children:
-                    [
-                        {
-                            basePath: expect.any(String), // Inserted by our own code, not by dirTree
-                            path: expect.any(String),
-                            name: "1x1.gif",
-                            size: 43,
-                            extension: ".gif",
-                            type: "file",
-                            mode: expect.any(Number),
-                            mtime: expect.anything(),
-                            mtimeMs: expect.any(Number)
-                        }],
-            }
-        );
-    });
-});
-
 
 // ====================================================================================
 //     S3 uploader (Queue Consumer)
