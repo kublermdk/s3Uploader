@@ -681,6 +681,9 @@ describe('S3 uploading consumer', () => {
                 fs.accessSync(tempTestFile, fs.constants.F_OK);
             }).toThrow(); // It's a worry if the file is still there, means it wasn't deleted
 
+            // Deal with ReferenceError: You are trying to `import` a file after the Jest environment has been torn down.
+            await waitImmediate();
+            await waitImmediate();
 
         });
 
@@ -763,9 +766,14 @@ describe('S3 uploading consumer', () => {
         });
         queueManager = new QueueManager(s3ConsumerSettingsDontOverwrite, {OUTPUT_ERRORS: false,});
         queueManager.start();
-        return expect(queueManager.addToQueue(invalidQueueEntry)).rejects.toEqual({
+
+
+        expect(queueManager.addToQueue(invalidQueueEntry)).rejects.toEqual({
             mainError: expect.anything()
         });
+        await queueManager.drained();
+
+
         // e.g
         // Error({
         //     code: "ENOENT",

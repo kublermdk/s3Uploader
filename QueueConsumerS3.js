@@ -102,10 +102,10 @@ class QueueConsumerS3 extends QueueConsumerBase {
             //     ctime: 2021-01-09T02:47:30.290Z,
             //     birthtime: 2021-01-09T02:47:29.424Z
             // }
-            fsStatPromise.catch(err => {
-                this.addError(err, `invalid local file '${localFilePath} 's3 uploader can't upload it`);
-                reject(err);
-            });
+            // fsStatPromise.catch(err => {
+            //     this.addError(err, `invalid local file '${localFilePath} 's3 uploader can't upload it`);
+            //     reject(err);
+            // });
 
 
             // -- This could take a few moments to sha a full file
@@ -180,7 +180,7 @@ class QueueConsumerS3 extends QueueConsumerBase {
                 }, (err, listObjects) => {
                     if (err) {
                         this.addError(err, `S3 listObjectsV2 for ${uploadLocationKey}`);
-                        reject(err);
+                        s3ListObjectPromise.reject(err);
                     } else {
                         // Example data: {"IsTruncated":false,"Contents":[ {
                         //  "Key":"testing/1x1.gif",
