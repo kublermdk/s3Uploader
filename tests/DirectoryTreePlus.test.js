@@ -95,7 +95,45 @@ describe('Directory Tree Plus', () => {
         }));
         // basePath: expect.any(String), // Inserted by our own code, not by dirTree
     });
+});
 
+
+describe('Directory Tree Plus temp folder', () => {
+
+    let tempFolder = fs.mkdtempSync(`${tmpDir}${sep}`);
+    afterEach(() => {
+        if (!_.isEmpty(tempFolder)) {
+            console.log("Removing the tempFolder: ", tempFolder);
+            fs.rmSync(tempFolder, {recursive: true, maxRetries: 1});
+        }
+    });
+    test('getFlattenedTreeEntries', () => {
+
+        let extendedTempFolder = path.join(tempFolder, `another${sep}test${sep}folder`);
+        console.debug("Created extendedTempFolder: ", extendedTempFolder);
+        fs.mkdirSync(extendedTempFolder, {recursive: true});
+        fs.copyFileSync(path.join(localResourcesFolder, '1x1.gif'), path.join(extendedTempFolder, '1x1.gif'));
+
+
+        let directoryTree = new DirectoryTree(tempFolder);
+        let dirTreeEntries = directoryTree.getUnprocessedDirTreeEntries();
+        // Expecting 4 children then the file
+        expect(_.get(dirTreeEntries, 'children.0.children.0.children.0.children.0.name')).toEqual("1x1.gif");
+        expect(directoryTree.returnFlattenedTreeEntries(dirTreeEntries)).toEqual([
+            {
+                "extension": ".gif",
+                "mode": expect.anything(),
+                "mtime": expect.anything(),
+                "mtimeMs": expect.anything(),
+                "name": "1x1.gif",
+                "path": expect.any(String),
+                "size": 43,
+                "type": "file"
+            }
+        ]);
+        expect(directoryTree.returnFlattenedTreeEntries(dirTreeEntries, false).length).toEqual(5);
+
+    });
 
 });
 

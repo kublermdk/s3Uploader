@@ -35,6 +35,10 @@ class DirectoryTreePlus {
     };
 
 
+    getUnprocessedDirTreeEntries() {
+        return this.DirTree(this.localFolder, this.dirTreeOptions);
+    }
+
     /**
      * Actually call DirTree
      *
@@ -42,7 +46,7 @@ class DirectoryTreePlus {
      */
     getTreeEntries = () => {
 
-        return this.addBasePathToEntries(this.filterOutRecursiveDirectoriesIfNeeded(this.DirTree(this.localFolder, this.dirTreeOptions)));
+        return this.addBasePathToEntries(this.filterOutRecursiveDirectoriesIfNeeded(this.getUnprocessedDirTreeEntries()));
     }
 
     // e.g: The filteredTree is:  {
@@ -103,6 +107,50 @@ class DirectoryTreePlus {
         }
 
         return unfilteredTree;
+    }
+
+    returnFlattenedTreeEntries = (tree, onlyFiles = true) => {
+        // Return a list of all the tree entries
+
+        if (_.isEmpty(tree)) {
+            return [];
+        }
+        let entries = [];
+
+        if (!_.isArray(tree)) {
+            // Been given an entry object not an array of entry objects
+
+            if (false === onlyFiles || true === onlyFiles && 'file' === tree.type) {
+                entries.push(_.omit(tree, 'children')); // Remove the children entry
+            }
+        } else {
+            // Not expecting an array to be provided, only a tree Entry (e.g with a path, type, etc..
+            console.warn("#########################################\nNOT AN ARRAY\n##################################\n", {
+                tree,
+                onlyFiles
+            });
+        }
+        // console.log("entries after omit local: ", {entries, onlyFiles});
+        if (!_.isEmpty(tree.children)) {
+            _.forEach(tree.children, treeEntry => {
+                if (_.get(treeEntry, 'children.length') > 0) {
+                    // console.log("treeEntry has children: ", treeEntry);
+                    // Add in the recursive entries
+                    entries = entries.concat(this.returnFlattenedTreeEntries(treeEntry, onlyFiles));
+                } else if (false === onlyFiles || true === onlyFiles && 'file' === treeEntry.type) {
+                    entries.push(_.omit(treeEntry, 'children'));
+                    // console.log("treeEntry hasn't children but is to be included: ", treeEntry);
+                }
+            });
+        }
+        return entries;
+    }
+
+
+    addToFilesHash = (flattenedTreeEntries) => {
+        // The path is the hash
+
+
     }
 
 
