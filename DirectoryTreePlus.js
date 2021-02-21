@@ -242,17 +242,31 @@ class DirectoryTreePlus {
         return unfilteredTree;
     }
 
+    // NB: This is expected to work with a recursive style dirTree output not a flattened tree
     treeOutput = (filteredTree, indents = '') => {
         let output = '';
 
         _.each(filteredTree, treeEntry => {
             // console.debug(treeEntry);
-            output += indents + (treeEntry.type === 'file' ? treeEntry.name : `[ ${treeEntry.name} ]`) + ' ' + fileSizeReadable(treeEntry.size) + "\n"
+            output += indents + (treeEntry.type === 'file' ? treeEntry.name : `[ ${treeEntry.name} ]`) + ' ' + this.fileSizeReadable(treeEntry.size) + "\n"
             if (treeEntry.type === 'directory' && _.get(treeEntry, 'children.length') > 0) {
                 output += this.treeOutput(treeEntry.children, `${indents} - `); // Recursive call
             }
         });
         return output;
+    }
+
+
+    fileSizeReadable = function (sizeBytes) {
+        if (null === sizeBytes || isNaN(sizeBytes)) {
+            return sizeBytes;
+        }
+        let decimals = (Math.round((sizeBytes / 1048576) * 100) / 100).toFixed(2);
+        if (decimals.toString().length > 3) {
+            decimals = decimals.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")
+        }
+        return decimals + "MB";
+
     }
 
 
