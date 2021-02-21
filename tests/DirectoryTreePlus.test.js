@@ -103,14 +103,14 @@ describe('Directory Tree Plus temp folder', () => {
     let tempFolder = fs.mkdtempSync(`${tmpDir}${sep}`);
     afterEach(() => {
         if (!_.isEmpty(tempFolder)) {
-            console.log("Removing the tempFolder: ", tempFolder);
+            // console.log("Removing the tempFolder: ", tempFolder);
             fs.rmSync(tempFolder, {recursive: true, maxRetries: 1});
         }
     });
     test('getFlattenedTreeEntries', () => {
 
         let extendedTempFolder = path.join(tempFolder, `another${sep}test${sep}folder`);
-        console.debug("Created extendedTempFolder: ", extendedTempFolder);
+        // console.debug("Created extendedTempFolder: ", extendedTempFolder);
         fs.mkdirSync(extendedTempFolder, {recursive: true});
         fs.copyFileSync(path.join(localResourcesFolder, '1x1.gif'), path.join(extendedTempFolder, '1x1.gif'));
 
@@ -119,21 +119,86 @@ describe('Directory Tree Plus temp folder', () => {
         let dirTreeEntries = directoryTree.getUnprocessedDirTreeEntries();
         // Expecting 4 children then the file
         expect(_.get(dirTreeEntries, 'children.0.children.0.children.0.children.0.name')).toEqual("1x1.gif");
-        expect(directoryTree.returnFlattenedTreeEntries(dirTreeEntries)).toEqual([
-            {
-                "extension": ".gif",
-                "mode": expect.anything(),
-                "mtime": expect.anything(),
-                "mtimeMs": expect.anything(),
-                "name": "1x1.gif",
-                "path": expect.any(String),
-                "size": 43,
-                "type": "file"
-            }
-        ]);
-        expect(directoryTree.returnFlattenedTreeEntries(dirTreeEntries, false).length).toEqual(5);
+        let expectedEntry = {
+            "extension": ".gif",
+            "mode": expect.anything(),
+            "mtime": expect.anything(),
+            "mtimeMs": expect.anything(),
+            "name": "1x1.gif",
+            "path": expect.any(String),
+            "basePath": expect.any(String),
+            "size": 43,
+            "type": "file"
+        };
+        let flattenedDirTreeEntriesWithOnlyFile = directoryTree.returnFlattenedTreeEntries(dirTreeEntries)
+        let flattenedDirTreeEntriesWithDirectories = directoryTree.returnFlattenedTreeEntries(dirTreeEntries, false);
+        expect(flattenedDirTreeEntriesWithOnlyFile).toEqual([expectedEntry]);
+        let treeEntry = flattenedDirTreeEntriesWithOnlyFile[0];
+
+        // -- Returns the full tree entries, with the directories
+        expect(flattenedDirTreeEntriesWithDirectories.length).toEqual(5);
+        expect(directoryTree.filesHash).toEqual({});
+
+
+        // -- Add the file to the hash
+        directoryTree.addFlattenedEntriesToFilesHash(flattenedDirTreeEntriesWithDirectories); // Should only add the files
+        expect(_.keys(directoryTree.filesHash).length).toEqual(1);
+        let filePath = treeEntry.path;
+        expect(directoryTree.filesHash).toEqual({[filePath]: expectedEntry});
+
+        // -- Test Merge
+        treeEntry.randomNewKey = 'random Value';
+        let addEntry = directoryTree.addTreeEntryToHash(treeEntry, directoryTree.MERGE_TYPE_MERGE);
+        expect(addEntry).toEqual(true);
+        expect(directoryTree.filesHash).toEqual({
+            [filePath]: _.merge({randomNewKey: 'random Value'}, expectedEntry)
+        });
+
+        // -- Merges in an a nearly empty entry (the path needs to be set the same)
+        let otherObject = {path: treeEntry.path, test: 'things'};
+        addEntry = directoryTree.addTreeEntryToHash(otherObject, directoryTree.MERGE_TYPE_MERGE);
+        expect(addEntry).toEqual(true);
+        expect(directoryTree.filesHash).toEqual({
+            [filePath]: _.merge({randomNewKey: 'random Value', test: 'things'}, expectedEntry)
+        });
+
+        // -- Overrides (replaces) an existing entry
+        addEntry = directoryTree.addTreeEntryToHash(otherObject, directoryTree.MERGE_TYPE_OVERRIDE);
+        expect(addEntry).toEqual(true);
+        expect(directoryTree.filesHash).toEqual({
+            [filePath]: otherObject
+        });
+
+        // -- Skips an existing entry
+        addEntry = directoryTree.addTreeEntryToHash(treeEntry, directoryTree.MERGE_TYPE_SKIP);
+        expect(addEntry).toEqual(false);
+        expect(directoryTree.filesHash).toEqual({
+            [filePath]: otherObject
+        });
+
+        let randomObject = {
+            path: 'random new path',
+            testing: 'the stairs are down'
+        };
+        // -- Skip still adds a new entry
+        addEntry = directoryTree.addTreeEntryToHash(randomObject, directoryTree.MERGE_TYPE_SKIP);
+        expect(addEntry).toEqual(true);
+        expect(directoryTree.filesHash).toEqual({
+            [filePath]: otherObject,
+            [randomObject.path]: randomObject
+        });
+
+        // -- Doesn't add invalid entries
+        addEntry = directoryTree.addTreeEntryToHash('invalid');
+        expect(addEntry).toEqual(null);
+        expect(directoryTree.filesHash).toEqual({
+            [filePath]: otherObject,
+            [randomObject.path]: randomObject
+        });
+
 
     });
+
 
 });
 
