@@ -22,6 +22,26 @@ if (process.env.DEBUG && JSON.parse(process.env.DEBUG) !== true) {
 }
 console.log("Starting up s3 Uploader");
 
+console.log('memory usage: ', process.memoryUsage());
+const getStats = () => {
+    let currentStats = _.merge({}, stats, {mbUploaded: directoryTreePlus.fileSizeReadable(stats.bytesSuccessfullyUploaded)})
+    // Based on https://www.valentinog.com/blog/node-usage/
+    const memoryUsed = process.memoryUsage();
+    /* Example used:
+    memory usage:  {
+  rss: 40411136,
+  heapTotal: 18059264,
+  heapUsed: 10919016,
+  external: 738235,
+  arrayBuffers: 67443
+}
+     */
+    for (let key in memoryUsed) {
+        currentStats[`memory${_.upperFirst(key)}`] = `${Math.round(memoryUsed[key] / 1024 / 1024 * 100) / 100} MB`;
+    }
+    return currentStats;
+}
+
 const args = process.argv.slice(2);
 
 // FYI https://www.npmjs.com/package/pkg says that:
@@ -280,6 +300,7 @@ const occasionalQueueProcessingStatusUpdates = () => {
         console.log('Update: ', {
             secondsSinceStarted: (new Date().getTime() - startTime) / 1000 + 's',
             status,
+            stats: getStats(),
             // queueManagerStats: JSON.stringify(queueManager.getStatistics(true), null, 2),
             queueManagerStats: queueManager.getStatistics(true),
             errors,
@@ -520,7 +541,7 @@ startupCompletedPromise.then((values) => {
     await queueManager.drained();
     status.queue = '1st queue run processed';
     // console.debug("Completed initial uploading: ", uploadedFiles);
-    console.log("Completed the initial processing in : " + (new Date().getTime() - startTime) / 1000 + `s\nStats: `, _.merge({}, stats, {mbUploaded: directoryTreePlus.fileSizeReadable(stats.bytesSuccessfullyUploaded)}));
+    console.log("Completed the initial processing in : " + (new Date().getTime() - startTime) / 1000 + `s\nStats: `, getStats());
     return uploadedFiles;
 }).then(async () => {
     if (true === singleUploadRun) {
