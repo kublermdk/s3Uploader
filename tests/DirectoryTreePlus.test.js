@@ -197,6 +197,31 @@ describe('Directory Tree Plus temp folder', () => {
         });
 
 
+        // -- Get just the new files
+        let noNewEntries = directoryTree.getFlattenedEntriesOfOnlyNewFiles();
+        expect(noNewEntries).toEqual([]);
+        expect(_.keys(directoryTree.filesHash).length).toEqual(2); // Only the previous entries
+
+        let newFilePath = path.join(`${tempFolder}${sep}another${sep}test`, 'tiny.gif');
+        // Add a new file (well the same file as before but in a new path. We don't have hashing based dedupe, it's just based on the path
+        fs.copyFileSync(path.join(localResourcesFolder, '1x1.gif'), newFilePath);
+
+        let newEntry = directoryTree.getFlattenedEntriesOfOnlyNewFiles(); // Should pickup the new entry
+        // Just the new entry, not all the files
+        expect(newEntry).toEqual([
+            _.merge({}, expectedEntry, {"name": "tiny.gif"})
+        ]);
+
+        expect(_.keys(directoryTree.filesHash).length).toEqual(3); // Now a new entry
+        // console.log("The filesHash contains: ", _.keys(directoryTree.filesHash));
+        /* e.g
+        The filesHash contains:  [
+          '/tmp/2Y7s3w/another/test/folder/1x1.gif',
+          'random new path',
+          '/tmp/2Y7s3w/another/test/tiny.gif'
+        ]
+         */
+
     });
 
 

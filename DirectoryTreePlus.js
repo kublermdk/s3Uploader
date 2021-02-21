@@ -54,6 +54,10 @@ class DirectoryTreePlus {
         return this.addBasePathToRecursiveEntries(this.filterOutRecursiveDirectoriesIfNeeded(this.getUnprocessedDirTreeEntries()));
     }
 
+    getFlattenedTreeEntries = (onlyFiles = true) => {
+        return this.returnFlattenedTreeEntries(this.filterOutRecursiveDirectoriesIfNeeded(this.getUnprocessedDirTreeEntries()), onlyFiles);
+    }
+
     // e.g: The filteredTree is:  {
     //   path: 'C:/Images/2020-12-31st New Years Eve',
     //   name: '2020-12-31st New Years Eve',
@@ -167,8 +171,21 @@ class DirectoryTreePlus {
         _.forEach(flattenedTreeEntries, (treeEntry, treeEntryIndex) => {
             if (treeEntry.type === this.TYPE_FILE) {
                 // Only process Files not directories
-                this.addTreeEntryToHash(treeEntry, overrideMergeOrSkipIfExisting)
+                this.addTreeEntryToHash(treeEntry, overrideMergeOrSkipIfExisting);
             }
+        });
+    }
+
+    getFlattenedEntriesOfOnlyNewFiles() {
+        let flattenedFileEntries = this.getFlattenedTreeEntries(true);
+        // console.log('getFlattenedEntriesOfOnlyNewFiles() ', flattenedFileEntries);
+        return _.filter(flattenedFileEntries, (treeEntry) => {
+            if (!this.filesHash[treeEntry.path]) {
+
+                this.filesHash[treeEntry.path] = treeEntry; // Add the new entry
+                return true; // Return this new entry
+            }
+            return false; // Skip the existing entry
         });
     }
 
@@ -197,14 +214,14 @@ class DirectoryTreePlus {
     }
 
 
-    filterOutRecursiveDirectoriesIfNeeded = (filteredTree) => {
+    filterOutRecursiveDirectoriesIfNeeded = (unfilteredTree) => {
 
-        if (true === this.settings.recurseFolder && _.get(filteredTree, 'children.length') > 0) {
-            filteredTree.children = _.filter(filteredTree.children, treeEntry => {
+        if (false === this.settings.recurseFolder && _.get(unfilteredTree, 'children.length') > 0) {
+            unfilteredTree.children = _.filter(unfilteredTree.children, treeEntry => {
                 return treeEntry.type !== 'directory';
             });
         }
-        return filteredTree;
+        return unfilteredTree;
     }
 
     treeOutput = (filteredTree, indents = '') => {
