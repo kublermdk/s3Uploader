@@ -176,13 +176,31 @@ class DirectoryTreePlus {
         });
     }
 
+    getFlattenedEntriesOfNewOrChangedFiles() {
+        let flattenedFileEntries = this.getFlattenedTreeEntries(true);
+        // console.log('getFlattenedEntriesOfOnlyNewFiles() ', flattenedFileEntries);
+        return _.filter(flattenedFileEntries, (treeEntry) => {
+            if (!this.filesHash[treeEntry.path]) {
+                this.addTreeEntryToHash(treeEntry); // Add the new entry
+                return true; // Return this new entry
+            } else {
+                // Check the size and modified time to see if it's changed
+                let previousEntry = this.filesHash[treeEntry.path];
+                if (previousEntry.size !== treeEntry.size || previousEntry.mtimeMs !== treeEntry.mtimeMs) {
+                    this.addTreeEntryToHash(treeEntry, this.MERGE_TYPE_MERGE); // Merge in the new changes to the existing entry
+                    return true;
+                }
+            }
+            return false; // Skip the existing, unmodified entry
+        });
+    }
+
     getFlattenedEntriesOfOnlyNewFiles() {
         let flattenedFileEntries = this.getFlattenedTreeEntries(true);
         // console.log('getFlattenedEntriesOfOnlyNewFiles() ', flattenedFileEntries);
         return _.filter(flattenedFileEntries, (treeEntry) => {
             if (!this.filesHash[treeEntry.path]) {
-
-                this.filesHash[treeEntry.path] = treeEntry; // Add the new entry
+                this.addTreeEntryToHash(treeEntry); // Add it to the existing hash
                 return true; // Return this new entry
             }
             return false; // Skip the existing entry

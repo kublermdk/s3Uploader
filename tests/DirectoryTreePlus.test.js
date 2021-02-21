@@ -147,11 +147,11 @@ describe('Directory Tree Plus temp folder', () => {
         expect(directoryTree.filesHash).toEqual({[filePath]: expectedEntry});
 
         // -- Test Merge
-        treeEntry.randomNewKey = 'random Value';
-        let addEntry = directoryTree.addTreeEntryToHash(treeEntry, directoryTree.MERGE_TYPE_MERGE);
+        let randomAddon = {randomNewKey: 'random Value'};
+        let addEntry = directoryTree.addTreeEntryToHash(_.merge({}, treeEntry, randomAddon), directoryTree.MERGE_TYPE_MERGE);
         expect(addEntry).toEqual(true);
         expect(directoryTree.filesHash).toEqual({
-            [filePath]: _.merge({randomNewKey: 'random Value'}, expectedEntry)
+            [filePath]: _.merge({}, randomAddon, expectedEntry)
         });
 
         // -- Merges in an a nearly empty entry (the path needs to be set the same)
@@ -159,7 +159,7 @@ describe('Directory Tree Plus temp folder', () => {
         addEntry = directoryTree.addTreeEntryToHash(otherObject, directoryTree.MERGE_TYPE_MERGE);
         expect(addEntry).toEqual(true);
         expect(directoryTree.filesHash).toEqual({
-            [filePath]: _.merge({randomNewKey: 'random Value', test: 'things'}, expectedEntry)
+            [filePath]: _.merge({}, randomAddon, otherObject, expectedEntry)
         });
 
         // -- Overrides (replaces) an existing entry
@@ -176,6 +176,13 @@ describe('Directory Tree Plus temp folder', () => {
             [filePath]: otherObject
         });
 
+        // -- Reset back to the original entry
+        addEntry = directoryTree.addTreeEntryToHash(treeEntry, directoryTree.MERGE_TYPE_OVERRIDE);
+        expect(addEntry).toEqual(true);
+        expect(directoryTree.filesHash).toEqual({
+            [filePath]: expectedEntry
+        });
+
         let randomObject = {
             path: 'random new path',
             testing: 'the stairs are down'
@@ -184,7 +191,7 @@ describe('Directory Tree Plus temp folder', () => {
         addEntry = directoryTree.addTreeEntryToHash(randomObject, directoryTree.MERGE_TYPE_SKIP);
         expect(addEntry).toEqual(true);
         expect(directoryTree.filesHash).toEqual({
-            [filePath]: otherObject,
+            [filePath]: expectedEntry,
             [randomObject.path]: randomObject
         });
 
@@ -192,7 +199,7 @@ describe('Directory Tree Plus temp folder', () => {
         addEntry = directoryTree.addTreeEntryToHash('invalid');
         expect(addEntry).toEqual(null);
         expect(directoryTree.filesHash).toEqual({
-            [filePath]: otherObject,
+            [filePath]: expectedEntry,
             [randomObject.path]: randomObject
         });
 
@@ -221,6 +228,10 @@ describe('Directory Tree Plus temp folder', () => {
           '/tmp/2Y7s3w/another/test/tiny.gif'
         ]
          */
+        // console.log("The filesHash contains: ", directoryTree.filesHash);
+        let noModifiedEntries = directoryTree.getFlattenedEntriesOfNewOrChangedFiles(); // Should pickup the new entry
+        // Just the new entry, not all the files
+        expect(noModifiedEntries).toEqual([]);
 
     });
 
