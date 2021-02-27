@@ -268,32 +268,6 @@ class DirectoryTreePlus {
         return decimals + "MB";
 
     }
-
-
-//
-// // --------------------------------
-// //   Workout Dir Tree Options
-// // --------------------------------
-//     let dirTreeOptions = {
-//         attributes: ['mode', 'mtime', 'mtimeMs'],
-//         normalizePath: true, // So we can use the same paths for S3
-//     };
-//
-//     if (process.env.FILE_EXTENSIONS) {
-//     dirTreeOptions.extensions = new RegExp('\\.(' + process.env.FILE_EXTENSIONS + ')$');
-// }
-//
-// if (ignoreSelf) {
-//     // @todo: Add ignore for the local files
-// }
-//
-// if (localExclude) {
-//     dirTreeOptions.exclude = localExclude;
-// }
-//
-// console.debug('dirTreeOptions: ', dirTreeOptions);
-
-
 }
 
 

@@ -606,23 +606,39 @@ const objectToHtml = function (object) {
     // e.g status  = {"startup":"Completed","queue":"general processing","fileChecksCompleted":0}
     // Should return as:
     // <p>startup: "Completed"</br />
-    let response = '<p>';
+    let response = '';
+
+    // -- If it's an array
+    if (_.isArray(object)) {
+        response += `<ol>`;
+        _.forEach(object, (value) => {
+            response += `<li>${valueResponse(value)}</li>`;
+        });
+        response += `</ol>`;
+        return response;
+    }
+
+    response += '<p>';
     _.forEach(object, (value, key) => {
-        let valueResponse = '';
-        if (_.isObject(value)) {
-            valueResponse = '<pre>' + JSON.stringify(value, null, 2) + '</pre>';
-        } else if (_.isString(value)) {
-            valueResponse = `"${value}"`;
-        } else if (_.isBoolean(value)) {
-            valueResponse = (true === value ? `<span class="bool-true" style="color: darkgreen;">✓ ` : `<span class="bool-false" style="color: darkred;">✗ `) + JSON.stringify(value) + `</span>`;
-        } else {
-            // e.g Number
-            valueResponse = value;
-        }
-        response += `<strong>${key}</strong>: ${valueResponse}<br />\n`;
+        response += `<strong>${key}</strong>: ${valueResponse(value)}<br />\n`;
     });
     response += `</p>`;
     return response;
+}
+
+const valueResponse = function (value) {
+    if (_.isObject(value)) {
+        return '<pre>' + JSON.stringify(value, null, 2) + '</pre>';
+    } else if (_.isString(value)) {
+        return `"${value}"`;
+    } else if (_.isBoolean(value)) {
+        return (true === value ? `<span class="bool-true" style="color: darkgreen;">✓ ` : `<span class="bool-false" style="color: darkred;">✗ `) + JSON.stringify(value) + `</span>`;
+
+        // @todo: Deal with Dates
+    } else {
+        // e.g Number
+        return value;
+    }
 }
 if (true === runWebserver) {
 
@@ -679,14 +695,23 @@ if (true === runWebserver) {
                 objectToHtml(status) + '<br /><hr />\n' +
                 "<h2>Stats</h2>" +
                 objectToHtml(getStats()) + '<br /><hr />\n' +
-                "<h2>Queue Status</h2>" +
-                objectToHtml(queueManager.getStatistics(verbose)) + '<br /><hr />\n' +
                 "<h2>Configuration</h2>" +
                 objectToHtml(config) + '<br /><hr />\n' +
+                "<h2>Queue Status</h2>" +
+                objectToHtml(queueManager.getStatistics(verbose)) + '<br /><hr />\n' +
+                "<h2>Files</h2>" +
+                objectToHtml(_.keys(directoryTreePlus.filesHash)) + '<br /><hr />\n' +
+
                 "");
         } else {
             // -- JSON
-            res.send({status, stats: getStats(), config, queueStatus: queueManager.getStatistics(verbose)});
+            res.send({
+                status,
+                stats: getStats(),
+                config,
+                queueStatus: queueManager.getStatistics(verbose),
+                filesHash: _.keys(directoryTreePlus.filesHash)
+            });
         }
     });
 
