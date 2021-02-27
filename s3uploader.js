@@ -14,6 +14,7 @@ const _ = require('lodash');
 const express = require('express');
 const morgan = require('morgan');
 const app = express();
+const basicAuth = require('express-basic-auth')
 // const url = require('url');
 // const querystring = require('querystring');
 
@@ -77,7 +78,10 @@ let singleUploadRun = JSON.parse(_.get(process, 'env.SINGLE_UPLOAD_RUN', false))
 let fileChangePollingSeconds = JSON.parse(_.get(process, 'env.FILE_CHANGE_POLLING_TIME', 20)); // In seconds
 let fileChangedOrJustNew = _.get(process, 'env.FILES_THAT_HAVE_CHANGED_OR_JUST_NEW', 'CHANGED').toUpperCase(); // if 'NEW' only process the files that have been newly uploaded and ignore those which have had their size or modified time changed.
 let statusUpdatesIntervalSeconds = _.get(process, 'env.STATUS_UPDATES_INTERVAL_SECONDS', false); // If 0, null, or something falsy then it won't output general status updates. This is really only useful if you want to actively watch updates via the CLI or by tailing the logs. Otherwise use the web interface
-let runWebserver = _.get(process, 'env.RUN_WEBSERVER', true);
+let runWebserver = JSON.parse(_.get(process, 'env.RUN_WEBSERVER', true));
+let webserverAuthEnabled = JSON.parse(_.get(process, 'env.WEBSERVER_AUTH_ENABLE', true));
+let webserverUser = _.get(process, 'env.WEBSERVER_AUTH_USER', 's3');
+let webserverPassword = _.get(process, 'env.WEBSERVER_AUTH_PASSWORD', 'uploaderPassword'); // The default is something that Chrome won't complain is already a hacked password
 const debug = JSON.parse(_.get(process, 'env.DEBUG', false));
 
 
@@ -96,9 +100,13 @@ let config = {
     fileChangedOrJustNew,
     statusUpdatesIntervalSeconds,
     runWebserver,
+    webserverAuthEnabled,
+    webserverUser,
+    webserverPassword,
     debug
 };
 
+console.debug(config);
 // -- The local excludes are a csv string that gets turned into an array of regex entries
 let localExclude = [];
 if (process.env.LOCAL_EXCLUDE) {
@@ -636,6 +644,13 @@ if (true === runWebserver) {
     let port = normalizePort(process.env.PORT || '5081');
     config.port = port;
     app.use(morgan('combined'));
+    if (true === webserverAuthEnabled) {
+        app.use(basicAuth({
+            users: {[webserverUser]: webserverPassword},
+            challenge: true,
+            realm: 's3Uploader ' + os.hostname(),
+        }));
+    }
 
     app.route('/').get(function (req, res) {
         res.send("<h1>S3 Uploader</h1>\n" +
