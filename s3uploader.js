@@ -3,6 +3,7 @@ require('dotenv').config(); // Load env vars https://www.npmjs.com/package/doten
 const fs = require('fs');
 const fsPromises = fs.promises;
 const path = require('path');
+const os = require("os");
 const dirTree = require("directory-tree");
 const DeferredPromise = require('./DeferredPromise.js');
 const DirectoryTreePlus = require('./DirectoryTreePlus.js');
@@ -10,6 +11,12 @@ const QueueManager = require('./QueueManager.js');
 const QueueConsumerS3 = require('./QueueConsumerS3.js');
 const _ = require('lodash');
 // const server = require('server');
+const express = require('express');
+const morgan = require('morgan');
+const app = express();
+// const url = require('url');
+// const querystring = require('querystring');
+
 
 let uploadedFiles = [];
 let status = {initialising: true}; // For a web server response
@@ -57,6 +64,8 @@ let s3BucketFolder = _.get(process, 'env.AWS_S3_BUCKET_FOLDER', '');
 if (s3BucketFolder === '/') {
     s3BucketFolder = ''; // We don't need a starting /
 }
+
+
 let ignoreSelf = JSON.parse(_.get(process, 'env.IGNORE_SELF', true));
 let recurseFolder = JSON.parse(_.get(process, 'env.RECURSE_FOLDER', false));
 let checkAwsBucketAtStartup = JSON.parse(_.get(process, 'env.CHECK_AWS_BUCKET_AT_STARTUP', true)); // parse it from a string to bool. Using _.get instead of || as it'll only return true even if set to false
@@ -68,7 +77,27 @@ let singleUploadRun = JSON.parse(_.get(process, 'env.SINGLE_UPLOAD_RUN', false))
 let fileChangePollingSeconds = JSON.parse(_.get(process, 'env.FILE_CHANGE_POLLING_TIME', 20)); // In seconds
 let fileChangedOrJustNew = _.get(process, 'env.FILES_THAT_HAVE_CHANGED_OR_JUST_NEW', 'CHANGED').toUpperCase(); // if 'NEW' only process the files that have been newly uploaded and ignore those which have had their size or modified time changed.
 let statusUpdatesIntervalSeconds = _.get(process, 'env.STATUS_UPDATES_INTERVAL_SECONDS', false); // If 0, null, or something falsy then it won't output general status updates. This is really only useful if you want to actively watch updates via the CLI or by tailing the logs. Otherwise use the web interface
+let runWebserver = _.get(process, 'env.RUN_WEBSERVER', true);
 const debug = JSON.parse(_.get(process, 'env.DEBUG', false));
+
+
+let config = {
+    localFolder,
+    s3BucketName,
+    ignoreSelf,
+    recurseFolder,
+    checkAwsBucketAtStartup,
+    actuallyUpload,
+    overwriteExisting,
+    overwriteAll,
+    queueConsumerCount,
+    singleUploadRun,
+    fileChangePollingSeconds,
+    fileChangedOrJustNew,
+    statusUpdatesIntervalSeconds,
+    runWebserver,
+    debug
+};
 
 // -- The local excludes are a csv string that gets turned into an array of regex entries
 let localExclude = [];
@@ -315,9 +344,9 @@ const checkForFileChanges = () => {
         return false; // Don't keep checking for file changes
     }
     let fileChecksCompleted = 0;
-    status.fileChecksCompleted = fileChecksCompleted;
+    stats.fileChecksCompleted = fileChecksCompleted;
     return setInterval(() => {
-        status.fileChecking = true;
+        stats.fileCheckingRightNow = true;
         let fileChanges = [];
         if ('NEW' === fileChangedOrJustNew) {
             fileChanges = directoryTreePlus.getFlattenedEntriesOfOnlyNewFiles();
@@ -351,7 +380,7 @@ const checkForFileChanges = () => {
             console.log(`File update check #${fileChecksCompleted} - Nothing ` + ('NEW' === fileChangedOrJustNew ? 'new' : 'changed') + ' at ', new Date());
         }
 
-        status.fileChecking = false;
+        status.fileCheckingRightNow = false;
     }, fileChangePollingSeconds * 1000);
 }
 
@@ -510,13 +539,14 @@ startupCompletedPromise.then((values) => {
     return flattenedTree;
 
 }).then(async filteredTree => {
+    queueManager.start(); // Start processing as soon as we add entries to the queue
     if (!filteredTree || _.get(filteredTree, 'path')) {
         // Ignoring empty tree or ACTUALLY_UPLOAD is set to false
+        status.queue = `Nothing in 1st Queue run ( ACTUALLY_UPLOAD is ${JSON.stringify(actuallyUpload)} )`;
         console.log("Invalid empty or disabled filteredTree, nothing to upload", filteredTree);
         return null;
     }
-    status.queue = 'starting 1st queue run';
-    queueManager.start(); // Start processing as soon as we add entries to the queue
+    status.queue = 'Starting 1st queue run';
 
     // ====================================
     //   Add Files to Processing Queue
@@ -545,14 +575,17 @@ startupCompletedPromise.then((values) => {
     return uploadedFiles;
 }).then(async () => {
     if (true === singleUploadRun) {
+        status.queue = '1st queue run complete and SINGLE_UPLOAD_RUN is true';
+        status.completed = true;
         clearInterval(occasionalUpdatesIntervalTimer);
         clearInterval(fileCheckIntervalTimer); // Although this shouldn't be set anyway
         console.log("Only doing a single run, so not checking for new files");
         console.log("stats: ", stats);
         console.log("=== COMPLETED ===");
-        exit(0); // Completed successfully
+        process.exit(0); // Completed successfully
     }
-    status.queue = 'general processing';
+    status.firstQueueRunCompleted = true;
+    status.queue = 'Waiting for file changes';
     // If not a singleUploadRun then the checkForFileChanges should continue running until the program is shut down
     console.log("-------");
 }).catch(err => {
@@ -561,41 +594,96 @@ startupCompletedPromise.then((values) => {
 
 
 // ==== For running a webserver
-//
-
-//
-// /**
-//  * Normalize a port into a number, string, or false.
-//  */
-//
-function normalizePort(val) {
-    let port = parseInt(val, 10);
-
-    if (isNaN(port)) {
-        // named pipe
-        return val;
-    }
-    if (port >= 0) {
-        // port number
-        return port;
-    }
-    return false;
+const objectToHtml = function (object) {
+    // e.g status  = {"startup":"Completed","queue":"general processing","fileChecksCompleted":0}
+    // Should return as:
+    // <p>startup: "Completed"</br />
+    let response = '<p>';
+    _.forEach(object, (value, key) => {
+        let valueResponse = '';
+        if (_.isObject(value)) {
+            valueResponse = '<pre>' + JSON.stringify(value, null, 2) + '</pre>';
+        } else if (_.isString(value)) {
+            valueResponse = `"${value}"`;
+        } else if (_.isBoolean(value)) {
+            valueResponse = (true === value ? `<span class="bool-true" style="color: darkgreen;">✓ ` : `<span class="bool-false" style="color: darkred;">✗ `) + JSON.stringify(value) + `</span>`;
+        } else {
+            // e.g Number
+            valueResponse = value;
+        }
+        response += `<strong>${key}</strong>: ${valueResponse}<br />\n`;
+    });
+    response += `</p>`;
+    return response;
 }
-
-let port = normalizePort(process.env.PORT || '5081');
-//
-//
-//
-// /**
-//  * Event listener for HTTP server "listening" event.
-//  */
-//
-// function onListening() {
-//     var addr = server.address();
-//     var bind = typeof addr === 'string'
-//         ? 'pipe ' + addr
-//         : 'port ' + addr.port;
-//     debug('Listening on ' + bind);
-// }
+if (true === runWebserver) {
 
 
+    function normalizePort(val) {
+        let port = parseInt(val, 10);
+
+        if (isNaN(port)) {
+            // named pipe
+            return val;
+        }
+        if (port >= 0) {
+            // port number
+            return port;
+        }
+        return false;
+    }
+
+    let port = normalizePort(process.env.PORT || '5081');
+    config.port = port;
+    app.use(morgan('combined'));
+
+    app.route('/').get(function (req, res) {
+        res.send("<h1>S3 Uploader</h1>\n" +
+            "<ul><li><a href='/ping'>Ping</a></li>\n" +
+            "<li><a href='/status'>Status</a></li>\n" +
+            "<li><a href='/status?verbose=true'>Status - Fully Verbose</a></li>\n" +
+            "<li><a href='/status?html=true'>Status - Human Readable</a></li>\n" +
+            "</ul>\n" +
+            "");
+    });
+    app.route('/ping').get(function (req, res) {
+        res.send({running: true});
+    });
+
+
+    app.get('/status', function (req, res) {
+        let verbose = _.get(req.query, 'verbose', false); // default to false
+
+        // -- Human Readable HTML version
+        if (true === JSON.parse(_.get(req.query, 'html', false))) {
+            // @todo: Make this look nicer, maybe have a default template and use Twig?
+            res.send(
+                "<h1>S3 Uploader Status</h1>\n" +
+                `Hostname: ${os.hostname()}<strong></strong><br />\n` +
+                "<h2>Status</h2>" +
+                objectToHtml(status) + '<br /><hr />\n' +
+                "<h2>Stats</h2>" +
+                objectToHtml(getStats()) + '<br /><hr />\n' +
+                "<h2>Queue Status</h2>" +
+                objectToHtml(queueManager.getStatistics(verbose)) + '<br /><hr />\n' +
+                "<h2>Configuration</h2>" +
+                objectToHtml(config) + '<br /><hr />\n' +
+                "");
+        } else {
+            // -- JSON
+            res.send({status, stats: getStats(), config, queueStatus: queueManager.getStatistics(verbose)});
+        }
+    });
+
+    function onListening() {
+        var addr = server.address();
+        var bind = typeof addr === 'string'
+            ? 'pipe ' + addr
+            : 'port ' + addr.port;
+        console.log('Listening on ' + bind);
+    }
+
+
+    const server = app.listen(port, onListening);
+
+}

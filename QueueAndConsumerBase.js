@@ -111,7 +111,7 @@ class QueueAndConsumerBase {
             // e.g { message: "Setting the status from 'init' to 'starting'", date: 2021-01-27T19:19:54.496Z }
             activities.push(activityEntry.date.toISOString() + ' ' + activityEntry.message + (activityEntry.data === null ? '' : ': ' + JSON.stringify(activityEntry.data)));
         });
-        return activities && activities.join(`\n`);
+        return activities; // && activities.join(`\n`);
     }
 
 }
