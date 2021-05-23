@@ -122,7 +122,6 @@ class QueueConsumerS3 extends QueueConsumerBase {
             if (this.config.s3) {
                 s3 = this.config.s3;
             } else {
-                // this.addActivity("Creating the S3 entry");
                 AWS.config.update({region: this.config.AWS_REGION}); // Likely to be 'us-east-2' Ohio
                 s3 = new AWS.S3({apiVersion: '2006-03-01'});
             }
