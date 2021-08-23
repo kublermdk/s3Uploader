@@ -1,4 +1,7 @@
-# S3 Uploader
+# GT Async Queue
+
+
+Based on the S3 Uploader
 
 This is a fairly basic node.js script / service which will monitor a folder and upload any associated files to S3.
 
@@ -11,7 +14,7 @@ Author: Michael Kubler ( @kublermdk )
 This script was created so that I could Rsync files into a folder on a server then have this script upload them to an S3
 deep archive storage bucket for long term "just in case" storage. I tried not to have too many extraneous files, but I
 don't know how to package a NodeJS app into a single file with all the node_modules and I realised that's not needed.
-Still, s3uploader.js, package.json and .env are the files you need for this to work, along with the node_modules folder
+Still, asyncQueue.js, package.json and .env are the files you need for this to work, along with the node_modules folder
 created when you run npm install.
 
 ## Install
@@ -19,17 +22,15 @@ created when you run npm install.
 Assumptions:
 
 * You've already got [NodeJS](https://nodejs.dev/) / NPM installed
-* You've got an AWS account with an S3 bucket
-* You've created an AWS IAM account which can access the S3 bucket and upload to it
-* You've setup
-  an [AWS credential file](https://docs.aws.amazon.com/sdk-for-javascript/v2/developer-guide/loading-node-credentials-shared.html)
-  .
+* You've installed the Gather Together CLI (and likely the web app)
+* You have a MongoDB database running, either locally or on the Cloud, e.g MongoDB Atlas 
+
 
 1. git clone the repo (or download) to a computer (Windows or Linux)
-2. Copy the sample.env to be named just .env
-3. Configure the .env file as needed (check below for information about the settings)
+2. Copy the sample.env and name it just `.env` e.g > `cp sample.env .env`
+3. Configure the `.env` file as needed (check below for information about the settings)
 4. Run `npm install`
-5. Run `npm run uploader` or simply `node s3uploader.js`
+5. Run `npm run uploader` or simply `node asyncQueue.js`
 
 ## Settings
 
@@ -47,9 +48,9 @@ Most settings are configured via a .env variable
     LOCAL_EXCLUDE=/node_modules/
     DELETE_ON_PROCESSED=false
 
-`LOCAL_FOLDER` is the location of the folder to periodically check and process. It defaults to the folder s3uploader.js
+`LOCAL_FOLDER` is the location of the folder to periodically check and process. It defaults to the folder asyncQueue.js
 is saved at if not specified. You can also specify a different folder by providing it as the first argument.
-e.g `node s3uploader.js /path/to/folder/`
+e.g `node asyncQueue.js /path/to/folder/`
 
 `AWS_S3_BUCKET` is the bucket name of where you want the files to be uploaded to. This is required and we do a list
 buckets check at the start to ensure you can see the bucket.

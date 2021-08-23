@@ -1,4 +1,3 @@
-const AWS = require('aws-sdk');
 require('dotenv').config(); // Load env vars https://www.npmjs.com/package/dotenv
 const fs = require('fs');
 const fsPromises = fs.promises;
@@ -8,7 +7,7 @@ const dirTree = require("directory-tree");
 const DeferredPromise = require('./DeferredPromise.js');
 const DirectoryTreePlus = require('./DirectoryTreePlus.js');
 const QueueManager = require('./QueueManager.js');
-const QueueConsumerS3 = require('./QueueConsumerS3.js');
+const QueueConsumerGTLocal = require('./QueueConsumerGTLocal.js');
 const _ = require('lodash');
 // const server = require('server');
 const express = require('express');
@@ -32,7 +31,7 @@ console.log("Starting up s3 Uploader");
 
 console.log('memory usage: ', process.memoryUsage());
 const getStats = () => {
-    let currentStats = _.merge({}, stats, {mbUploaded: directoryTreePlus.fileSizeReadable(stats.bytesSuccessfullyUploaded)})
+    let currentStats = _.merge({}, stats, {totalFileSizeProcessed: directoryTreePlus.fileSizeReadable(stats.totalFileSizeProcessed)})
     // Based on https://www.valentinog.com/blog/node-usage/
     const memoryUsed = process.memoryUsage();
     /* Example used:
@@ -60,44 +59,32 @@ const args = process.argv.slice(2);
 let localFolder = args[0] || process.env.LOCAL_FOLDER || __dirname;
 localFolder = path.resolve(localFolder);
 
-const s3BucketName = process.env.AWS_S3_BUCKET;
-let s3BucketFolder = _.get(process, 'env.AWS_S3_BUCKET_FOLDER', '');
-if (s3BucketFolder === '/') {
-    s3BucketFolder = ''; // We don't need a starting /
-}
-
 
 let ignoreSelf = JSON.parse(_.get(process, 'env.IGNORE_SELF', true));
-let recurseFolder = JSON.parse(_.get(process, 'env.RECURSE_FOLDER', false));
-let checkAwsBucketAtStartup = JSON.parse(_.get(process, 'env.CHECK_AWS_BUCKET_AT_STARTUP', true)); // parse it from a string to bool. Using _.get instead of || as it'll only return true even if set to false
-let actuallyUpload = JSON.parse(_.get(process, 'env.ACTUALLY_UPLOAD', true));
-let overwriteExisting = JSON.parse(_.get(process, 'env.OVERWRITE_EXISTING_IF_DIFFERENT', true));
-let overwriteAll = JSON.parse(_.get(process, 'env.OVERWRITE', false));
+let gtScriptPath = JSON.parse(_.get(process, 'env.GT_SCRIPT_PATH', null)); // REQUIRED!!
 let queueConsumerCount = JSON.parse(_.get(process, 'env.QUEUE_CONSUMER_COUNT', 2));
-let singleUploadRun = JSON.parse(_.get(process, 'env.SINGLE_UPLOAD_RUN', false));
-let fileChangePollingSeconds = JSON.parse(_.get(process, 'env.FILE_CHANGE_POLLING_TIME', 20)); // In seconds
-let fileChangedOrJustNew = _.get(process, 'env.FILES_THAT_HAVE_CHANGED_OR_JUST_NEW', 'CHANGED').toUpperCase(); // if 'NEW' only process the files that have been newly uploaded and ignore those which have had their size or modified time changed.
+let singleRun = JSON.parse(_.get(process, 'env.SINGLE_RUN', false));
+let fileChangePollingSeconds = JSON.parse(_.get(process, 'env.FILE_CHANGE_POLLING_TIME', 20)); // In seconds... e.g check every 20s
 let statusUpdatesIntervalSeconds = _.get(process, 'env.STATUS_UPDATES_INTERVAL_SECONDS', false); // If 0, null, or something falsy then it won't output general status updates. This is really only useful if you want to actively watch updates via the CLI or by tailing the logs. Otherwise use the web interface
 let runWebserver = JSON.parse(_.get(process, 'env.RUN_WEBSERVER', true));
 let webserverAuthEnabled = JSON.parse(_.get(process, 'env.WEBSERVER_AUTH_ENABLE', true));
-let webserverUser = _.get(process, 'env.WEBSERVER_AUTH_USER', 's3');
-let webserverPassword = _.get(process, 'env.WEBSERVER_AUTH_PASSWORD', 'uploaderPassword'); // The default is something that Chrome won't complain is already a hacked password
+let webserverUser = _.get(process, 'env.WEBSERVER_AUTH_USER', 'gt');
+let webserverPassword = _.get(process, 'env.WEBSERVER_AUTH_PASSWORD', 'Gather Together'); // The default is something that Chrome won't complain is already a hacked password.. Unless you go using this in other places, which is stupid
+let submissionFolderName = _.get(process, 'env.SUBMISSION_FOLDER_NAME', '1. Submission'); // Defaults to
+let queueFolderName = _.get(process, 'env.QUEUE_FOLDER_NAME', '2. Queue'); // Defaults to
 const debug = JSON.parse(_.get(process, 'env.DEBUG', false));
 
+if (null === gtScriptPath) {
+    throw new Error('No GT Script Path set. Check the .env file and set the GT_SCRIPT_PATH');
+}
 
 let config = {
     localFolder,
-    s3BucketName,
     ignoreSelf,
-    recurseFolder,
-    checkAwsBucketAtStartup,
-    actuallyUpload,
-    overwriteExisting,
-    overwriteAll,
+    gtScriptPath,
     queueConsumerCount,
-    singleUploadRun,
+    singleRun,
     fileChangePollingSeconds,
-    fileChangedOrJustNew,
     statusUpdatesIntervalSeconds,
     runWebserver,
     webserverAuthEnabled,
@@ -123,10 +110,10 @@ if (process.env.LOCAL_EXCLUDE) {
 
 let stats = {
     filesQueued: 0,
-    filesUploaded: 0,
+    filesProcessed: 0,
     filesSkipped: 0,
     filesErrored: 0,
-    bytesSuccessfullyUploaded: 0, // Only updated when a file has been uploaded
+    totalFileSizeProcessed: 0, // Only updated when a file has been uploaded
     unexpectedErrors: 0,
 }
 
@@ -141,31 +128,16 @@ if (false === debug) {
     };
 }
 
-let s3ConsumerConfig = {
-    AWS_REGION: process.env.AWS_REGION,
-    AWS_S3_BUCKET: s3BucketName,
-    AWS_S3_BUCKET_FOLDER: s3BucketFolder,
-    AWS_CONFIG_FILE: process.env.AWS_CONFIG_FILE,
-    AWS_PROFILE: process.env.AWS_PROFILE,
-    OVERWRITE_EXISTING_IF_DIFFERENT: overwriteExisting,
-    OVERWRITE: overwriteAll,
-}
 
-
-console.log("===============================\n",
-    {
-        LOCAL_FOLDER: localFolder,
-        FILE_EXTENSIONS: process.env.FILE_EXTENSIONS,
-        // MIME_TYPES: process.env.MIME_TYPES,
-        DEBUG: JSON.parse(_.get(process, 'env.DEBUG', true)),
-        IGNORE_SELF: ignoreSelf,
-        LOCAL_EXCLUDE: localExclude,
-        RECURSE_FOLDER: recurseFolder,
-        CHECK_AWS_BUCKET_AT_STARTUP: checkAwsBucketAtStartup,
-        OVERWRITE_EXISTING_IF_DIFFERENT: overwriteExisting,
-        args,
-        s3ConsumerConfig
-    });
+console.log("===============================\n", {
+    LOCAL_FOLDER: localFolder,
+    FILE_EXTENSIONS: process.env.FILE_EXTENSIONS,
+    // MIME_TYPES: process.env.MIME_TYPES,
+    DEBUG: JSON.parse(_.get(process, 'env.DEBUG', true)),
+    IGNORE_SELF: ignoreSelf,
+    LOCAL_EXCLUDE: localExclude,
+    args,
+});
 
 // @todo: Don't upload self files
 let selfFiles = [__filename, '.env', 'QueueConsumer.js'];
@@ -174,11 +146,8 @@ let selfFiles = [__filename, '.env', 'QueueConsumer.js'];
 // @todo: If ignoreHiddenFiles then add ^\..+ to the excludeFiles
 // @todo: If process.env.FILE_EXTENSIONS then add to the excludeFiles ?
 
-// Based on https://docs.aws.amazon.com/sdk-for-javascript/v2/developer-guide/s3-example-creating-buckets.html#s3-example-creating-buckets-upload-file
-AWS.config.update({region: process.env.AWS_REGION}); // Likely to be 'us-east-2' Ohio
-// -- Create S3 service object
-let s3 = new AWS.S3({apiVersion: '2006-03-01'});
 
+let gtFileConsumerConfig = {};
 
 // --------------------------------
 //   Workout Dir Tree Options
@@ -203,29 +172,31 @@ if (localExclude) {
 console.debug('dirTreeOptions: ', dirTreeOptions);
 
 let directoryTreePlus = new DirectoryTreePlus(localFolder, {
-    recurseFolder: recurseFolder,
+    recurseFolder,
     excludeFiles: localExclude,
     extensions: process.env.FILE_EXTENSIONS, // e.g new RegExp('\\.(' + process.env.FILE_EXTENSIONS + ')$');
     ignoreHiddenFiles: true, // Especially useful for checking folders that have Rsync files being received
     dirTreeOptions
 });
 
-s3ConsumerConfig.directoryTreePlus = directoryTreePlus; // Add in the directoryTreePlus instance to the s3 consumers
+
+gtFileConsumerConfig.directoryTreePlus = directoryTreePlus; // Add in the directoryTreePlus instance to the s3 consumers
 
 // ======================================================================
 //                           Setup  Checks
 // ======================================================================
 status = {initialising: true, setupChecks: 'started'};
 let canAccessLocalFolderPromise = new DeferredPromise();
-let checkAwsCredentialsPromise = new DeferredPromise();
-let checkAwsBucketPromise = new DeferredPromise();
+let submissionFolderPromise = new DeferredPromise();
+let queueFolderPromise = new DeferredPromise();
+let canAccessScriptPromise = new DeferredPromise();
 let startupCompletedPromise = new DeferredPromise();
 
 // For later
 let queueManagerSettings = {
     consumerCount: queueConsumerCount,
-    consumerClass: QueueConsumerS3,
-    consumerConfig: s3ConsumerConfig,
+    consumerClass: QueueConsumerGTLocal, // @todo: CREATE THIS AS THE GT LOCAL CONSUMER. I deleted the instanciation somewhere!!!
+    consumerConfig: gtFileConsumerConfig,
 };
 let queueManager = new QueueManager(queueManagerSettings);
 
@@ -244,61 +215,51 @@ fsPromises.stat(localFolder).then(folderStat => {
     canAccessLocalFolderPromise.reject(`Error listing local folder ${localFolder}: `, err);
 });
 
+// ---------------------------------------------
+//   Create Submission / Queue Folders
+// ---------------------------------------------
 
-// --------------------------------
-//   S3 Check
-// --------------------------------
-console.debug("Checking if you can access the S3 bucket");
+console.debug("Creating the Submission and queue folders");
 
-AWS.config.getCredentials((err) => {
-    if (err) {
-        console.error("Unable to access AWS credentials. Check you have a valid ~/.aws/credentials ( or on Windows C:\\Users\\USER_NAME\\.aws\\credentials ) file ", err);
-        checkAwsCredentialsPromise.reject('Unable to access credentials'); // Stop the other promises;
-        process.exit(3); // Straight exit, and with a specific error code
+let submissionFolderPath = path.join(localFolder, submissionFolderName);
+let queueFolderPath = path.join(localFolder, queueFolderName);
+fsPromises.stat(submissionFolderPath).then(async folderStat => {
+    if (false === folderStat.isDirectory()) {
+        let submissionFolderCreation = await fsPromises.mkdir(submissionFolderPath, {recursive: false, mode: 0o777});
+        submissionFolderPromise.resolve(submissionFolderCreation);
     } else {
-        console.debug("AWS Access key:", AWS.config.credentials.accessKeyId);
-        checkAwsCredentialsPromise.resolve(true);
+        submissionFolderPromise.resolve(true); // Already exists
     }
 });
 
-if (!checkAwsBucketAtStartup) {
-    checkAwsBucketPromise.resolve(null);
-} else {
-    s3.listBuckets(function (err, bucketListingData) {
-        if (err) {
-            console.error("Error listing AWS buckets", err);
-            checkAwsBucketPromise.reject('Unable to access AWS Buckets');
-        } else {
-            // e.g bucketListingData.Buckets: [{
-            //     Name: 's3-uploader',
-            //     CreationDate: 2020-10-27T05:51:28.000Z
-            // }]
-            console.debug("AWS Buckets available: ", bucketListingData);
-            if (!bucketListingData || !bucketListingData.Buckets || 0 === bucketListingData.Buckets.length) {
-                throw new Error("Invalid AWS S3 Bucket Listing response");
-            }
+fsPromises.stat(queueFolderPath).then(async folderStat => {
+    if (false === folderStat.isDirectory()) {
+        try {
 
-            let canSeeBucket = false;
-            bucketListingData.Buckets.forEach(bucket => {
-                if (bucket.Name === s3BucketName) {
-                    canSeeBucket = true;
-                }
-            });
-            if (canSeeBucket !== true) {
-                checkAwsBucketPromise.reject("Unable to list the S3 Bucket " + s3BucketName + " check AWS_S3_BUCKET is correct and the IAM has access");
-            }
-
-            // console.log("AWS Buckets available: ", data.Buckets);
-            checkAwsBucketPromise.resolve(bucketListingData);
+            let queueFolderCreation = await fsPromises.mkdir(queueFolderPath, {recursive: false, mode: 0o777});
+        } catch (exception) {
+            throw new Error(`Unable to create the Queue Folder ${queueFolderPath}: `,)
         }
-    });
-}
+        queueFolderPromise.resolve(queueFolderCreation);
+    } else {
+        queueFolderPromise.resolve(true); // Already exists
+    }
+});
+
+
+fsPromises.stat(gtScriptPath).then(async fileStat => {
+    if (false === fileStat.isFile()) {
+        canAccessScriptPromise.reject(`GT_SCRIPT_PATH is not a valid path, can't access it: "${gtScriptPath}"`);
+    } else {
+        canAccessScriptPromise.resolve(true); // Exists, yay
+    }
+});
 
 
 // =============================================
 //   Check initialisation
 // =============================================
-Promise.all([canAccessLocalFolderPromise, checkAwsCredentialsPromise, checkAwsBucketPromise]).then((values) => {
+Promise.all([canAccessLocalFolderPromise, submissionFolderPromise, queueFolderPromise, canAccessScriptPromise]).then((values) => {
 
     status = {
         initialising: 'complete',
@@ -306,13 +267,10 @@ Promise.all([canAccessLocalFolderPromise, checkAwsCredentialsPromise, checkAwsBu
         startup: 'completing'
     }
     let isTrue = '✓ true';
-    let awsBucket = isTrue;
-    if (values[2] === null) {
-        awsBucket = '- unchecked';
-    }
     console.log(`Can Access LocalFolder: ${isTrue}\n` +
-        `AWS Credentials Valid: ${isTrue}\n` +
-        `Can Access S3 Bucket: ${awsBucket}\n`
+        `Processing folder exists: ${isTrue}`,
+        `Queue folder exists: ${isTrue}`,
+        `Script File exists: ${isTrue}`,
     );
 
     startupCompletedPromise.resolve(values);
@@ -348,7 +306,7 @@ const occasionalQueueProcessingStatusUpdates = () => {
 
 const checkForFileChanges = () => {
 
-    if (true === singleUploadRun) {
+    if (true === singleRun) {
         return false; // Don't keep checking for file changes
     }
     let fileChecksCompleted = 0;
@@ -400,8 +358,8 @@ const addFileToQueue = async (queueManager, treeEntry) => {
             // Merge in the processing Response, assuming it didn't completely error
             directoryTreePlus.addTreeEntryToHash(processingResponse, directoryTreePlus.MERGE_TYPE_MERGE);
             if (processingResponse.uploaded) {
-                stats.filesUploaded++;
-                stats.bytesSuccessfullyUploaded += _.get(processingResponse, 'queueEntry.size', 0);
+                stats.filesProcessed++;
+                // stats.bytesSuccessfullyUploaded += _.get(processingResponse, 'queueEntry.size', 0);
             } else {
                 stats.filesSkipped++;
             }
@@ -509,7 +467,7 @@ startupCompletedPromise.then((values) => {
     // let flattenedTree = filterOutRecursiveDirectoriesIfNeeded(dirTree(localFolder, dirTreeOptions));
     console.debug("Checking files:");
     // console.debug("The flattenedTree is: ", flattenedTree);
-    console.log("\nThe flattenedTree as nicer output is: \n", directoryTreePlus.treeOutput(flattenedTree));
+    console.log("\nExisting Files: \n", directoryTreePlus.treeOutput(flattenedTree));
     // e.g: The flattenedTree is:  {
     //   path: 'C:/Images/2020-12-31st New Years Eve',
     //   name: '2020-12-31st New Years Eve',
@@ -571,7 +529,7 @@ startupCompletedPromise.then((values) => {
     return null;
 }).then(async () => {
     console.log("Initial Uploading being processed for: ", _.keys(directoryTreePlus.filesHash));
-    if (false === singleUploadRun) {
+    if (false === singleRun) {
         fileCheckIntervalTimer = checkForFileChanges();
     }
     occasionalUpdatesIntervalTimer = occasionalQueueProcessingStatusUpdates();
@@ -582,7 +540,7 @@ startupCompletedPromise.then((values) => {
     console.log("Completed the initial processing in : " + (new Date().getTime() - startTime) / 1000 + `s\nStats: `, getStats());
     return uploadedFiles;
 }).then(async () => {
-    if (true === singleUploadRun) {
+    if (true === singleRun) {
         status.queue = '1st queue run complete and SINGLE_UPLOAD_RUN is true';
         status.completed = true;
         clearInterval(occasionalUpdatesIntervalTimer);
