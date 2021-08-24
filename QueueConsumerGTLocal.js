@@ -30,20 +30,21 @@ class QueueConsumerGTLocal extends QueueConsumerBase {
     // The default configuration is added to the config in the constructor
     defaultConfig = {
         FILEPATH_CLI_ARG: '--filepath=', // Added before the filename, you could have it with a space without anything, whatever is needed. e.g '/usr/kublermdk/gt/script/cli.js --filepath="/usr/kublermdk/gt/2. Queue/2021-08-23rd-video of some cool stuff.mp4"'
+        // scriptPath: e.g "/usr/home/kublermdk/gt/bin/cli" Expecting this to be in the config and to point to what we want to trigger
         child_process_options: {
             encoding: 'utf8',
             timeout: 0, // No timeout if 0 otherwise then in milliseconds
-            maxBuffer: 2000 * 1024, // Allow lots of console.log output if needed
+            // maxBuffer: 2000 * 1024, // Allow lots of console.log output if needed
             killSignal: 'SIGTERM',
-            cwd: null, // @todo: Probably needs to be set to the working directory of the GT script or the Queue folder?
+            // cwd: null, // @todo: Probably needs to be set to the working directory of the GT script or the Queue folder?
             // env: null // setting it means it probably doesn't send the usual process.env
         }
     }
 
-    processQueueEntry = async (queueEntry) => {
+    processQueueEntry = async (treeEntry) => {
 
         /*
-        Example queueEntry is:
+        Example treeEntry is:
         {
           "path": "/usr/kublermdk/gt/2. Queue/2021-08-23rd-video of some cool stuff.mp4",
           "name": "2021-08-23rd-video of some cool stuff.mp4",
@@ -62,18 +63,47 @@ class QueueConsumerGTLocal extends QueueConsumerBase {
         return new Promise((resolve, reject) => {
                 let processingTimeStarted = new Date();
                 let cliOptions = this.config.child_process_options;
-                const basePath = queueEntry.basePath;
-                let localFilePath = path.join(queueEntry.path); // Convert to a local filepath that fs can read
+                // const basePath = treeEntry.basePath;
+                // let localFilePath = path.join(treeEntry.path); // Convert to a local filepath that fs can read
+                let localFilePath = treeEntry.path;
 
+                let processingExecCommand = `${this.config.scriptPath} "${localFilePath}"`
+                console.log("About to run with: ", processingExecCommand, 'and the cli options: ', cliOptions);
                 // let sha256FilePromise = new DeferredPromise();
                 // let fsStatPromise = fsPromises.stat(localFilePath);
-                let processingPromise = new DeferredPromise();
-                let processingCliCall = exec(`ls -aslch`, `"${localFilePath}"`, cliOptions).then(results => {
-                    const {stdout, stderr} = results;
-                    console.log(`ls results for: ${localFilePath}:\n`, results, "\n\n");
+                // let processingPromise = new DeferredPromise();
+
+                let processingStartTime = new Date();
+
+                // -------------------------------------------------------------------------
+                //   Actually Start the Processing!!
+                // -------------------------------------------------------------------------
+                exec(processingExecCommand, cliOptions).then(results => {
+                    const {stdout, stderr} = results; // Results contains stdout and stderr arrays
+                    let fileProcessingTimeMs = new Date().getTime() - processingStartTime.getTime(); // in ms
+                    let processingTime = (new Date().getTime() - processingTimeStarted.getTime()) / 1000 + 's';
+                    this.addActivity("Processed file locally with Gather Together: " + JSON.stringify({
+                        localFilePath,
+                        fileProcessingTimeMs, // in ms
+                        processingTime,
+                        results,
+                    }));
+                    // console.log(`Results for: ${localFilePath}:\n`, results, "\n\n");
                     // console.log("StdOut: ", stdout);
                     // console.log("StdErr: ", stderr);
-                    resolve(results);
+                    resolve({
+                        processed: true,
+                        localFilePath,
+                        fileProcessingTimeMs,
+                        processingTime,
+                        treeEntry,
+                        stdout,
+                        stderr
+                    });
+                }).catch(err => {
+                    this.addError(err, `Error trying to process ${treeEntry.path}`);
+                    // console.error("Error whilst processing: ", treeEntry, "\nError: ", err);
+                    reject(err);
                 });
 
                 // Example fsStat:
@@ -123,11 +153,11 @@ class QueueConsumerGTLocal extends QueueConsumerBase {
 
                             this.addActivity(`Triggering the Gather Together Script for ${localFilePath} which is ${fsStat['size']} bytes in size`, {
                                 localFilePath,
-                                queueEntry,
+                                treeEntry,
                                 fsStat
                             });
 
-                            let processingStartTime = new Date();
+
 
                             // ===============================================================
                             //    Actually Trigger the processing of the file
@@ -151,7 +181,7 @@ class QueueConsumerGTLocal extends QueueConsumerBase {
                                     localFilePath,
                                     fileProcessingTimeMs,
                                     processingTime,
-                                    queueEntry,
+                                    treeEntry,
                                 });
                             }
                         });

@@ -27,9 +27,9 @@ if (process.env.DEBUG && JSON.parse(process.env.DEBUG) !== true) {
     console.debug = function () {
     }; // Make it an empty function
 }
-console.log("Starting up s3 Uploader");
+console.log("Starting up Async Queue");
 
-console.log('memory usage: ', process.memoryUsage());
+// console.log('memory usage: ', process.memoryUsage());
 const getStats = () => {
     let currentStats = _.merge({}, stats, {totalFileSizeProcessed: directoryTreePlus.fileSizeReadable(stats.totalFileSizeProcessed)})
     // Based on https://www.valentinog.com/blog/node-usage/
@@ -61,27 +61,38 @@ localFolder = path.resolve(localFolder);
 
 
 let ignoreSelf = JSON.parse(_.get(process, 'env.IGNORE_SELF', true));
-let gtScriptPath = JSON.parse(_.get(process, 'env.GT_SCRIPT_PATH', null)); // REQUIRED!!
+let scriptPath = _.get(process, 'env.SCRIPT_PATH', null); // REQUIRED!! Checks it's a valid file
+let scriptPathPre = _.get(process, 'env.SCRIPT_PATH_PRE', ''); // e.g If you need to trigger the script with "node " or "cmd.bat" or something
+let scriptPathPost = _.get(process, 'env.SCRIPT_PATH_POST', ''); // e.g If you need to pass arguments to the script, like a User ID
 let queueConsumerCount = JSON.parse(_.get(process, 'env.QUEUE_CONSUMER_COUNT', 2));
 let singleRun = JSON.parse(_.get(process, 'env.SINGLE_RUN', false));
-let fileChangePollingSeconds = JSON.parse(_.get(process, 'env.FILE_CHANGE_POLLING_TIME', 20)); // In seconds... e.g check every 20s
+let fileChangePollingSeconds = JSON.parse(_.get(process, 'env.FILE_CHANGE_POLLING_TIME', 5)); // In seconds... e.g check every 5s to see if there's a new file in the submission folder
 let statusUpdatesIntervalSeconds = _.get(process, 'env.STATUS_UPDATES_INTERVAL_SECONDS', false); // If 0, null, or something falsy then it won't output general status updates. This is really only useful if you want to actively watch updates via the CLI or by tailing the logs. Otherwise use the web interface
 let runWebserver = JSON.parse(_.get(process, 'env.RUN_WEBSERVER', true));
 let webserverAuthEnabled = JSON.parse(_.get(process, 'env.WEBSERVER_AUTH_ENABLE', true));
+let recurseFolder = JSON.parse(_.get(process, 'env.RECURSE_FOLDER', false)); // The "1. Submission" folder
 let webserverUser = _.get(process, 'env.WEBSERVER_AUTH_USER', 'gt');
 let webserverPassword = _.get(process, 'env.WEBSERVER_AUTH_PASSWORD', 'Gather Together'); // The default is something that Chrome won't complain is already a hacked password.. Unless you go using this in other places, which is stupid
 let submissionFolderName = _.get(process, 'env.SUBMISSION_FOLDER_NAME', '1. Submission'); // Defaults to
 let queueFolderName = _.get(process, 'env.QUEUE_FOLDER_NAME', '2. Queue'); // Defaults to
+let actuallyRun = JSON.parse(_.get(process, 'env.ACTUALLY_RUN', true)); // If we actually trigger the CLI script or not
+let queueProcessingFilename = _.get(process, 'env.QUEUE_PROCESSING_FILENAME', 'asyncProcessing.status.txt'); // A quick way to know if the asyncQueue is running and what it's currently working on
 const debug = JSON.parse(_.get(process, 'env.DEBUG', false));
 
-if (null === gtScriptPath) {
-    throw new Error('No GT Script Path set. Check the .env file and set the GT_SCRIPT_PATH');
+if (null === scriptPath) {
+    throw new Error('No Script Path set. Check the .env file and set the SCRIPT_PATH');
 }
+
+const SUBMISSION_FOLDER_PATH = path.join(localFolder, submissionFolderName);
+const QUEUE_FOLDER_PATH = path.join(localFolder, queueFolderName);
+const QUEUE_PROCESSING_FILE = path.join(QUEUE_FOLDER_PATH, queueProcessingFilename);
 
 let config = {
     localFolder,
     ignoreSelf,
-    gtScriptPath,
+    scriptPathPre,
+    scriptPath,
+    scriptPathPost,
     queueConsumerCount,
     singleRun,
     fileChangePollingSeconds,
@@ -109,6 +120,7 @@ if (process.env.LOCAL_EXCLUDE) {
 }
 
 let stats = {
+    fileChecksCompleted: 0,
     filesQueued: 0,
     filesProcessed: 0,
     filesSkipped: 0,
@@ -147,7 +159,9 @@ let selfFiles = [__filename, '.env', 'QueueConsumer.js'];
 // @todo: If process.env.FILE_EXTENSIONS then add to the excludeFiles ?
 
 
-let gtFileConsumerConfig = {};
+let gtFileConsumerConfig = {
+    scriptPath: scriptPathPre + scriptPath + scriptPathPost,
+};
 
 // --------------------------------
 //   Workout Dir Tree Options
@@ -171,13 +185,7 @@ if (localExclude) {
 
 console.debug('dirTreeOptions: ', dirTreeOptions);
 
-let directoryTreePlus = new DirectoryTreePlus(localFolder, {
-    recurseFolder,
-    excludeFiles: localExclude,
-    extensions: process.env.FILE_EXTENSIONS, // e.g new RegExp('\\.(' + process.env.FILE_EXTENSIONS + ')$');
-    ignoreHiddenFiles: true, // Especially useful for checking folders that have Rsync files being received
-    dirTreeOptions
-});
+let directoryTreePlus = null;
 
 
 gtFileConsumerConfig.directoryTreePlus = directoryTreePlus; // Add in the directoryTreePlus instance to the s3 consumers
@@ -211,8 +219,7 @@ fsPromises.stat(localFolder).then(folderStat => {
     }
     canAccessLocalFolderPromise.resolve(true);
 }).catch(err => {
-
-    canAccessLocalFolderPromise.reject(`Error listing local folder ${localFolder}: `, err);
+    canAccessLocalFolderPromise.reject(`Error listing local folder "${localFolder}"`, err);
 });
 
 // ---------------------------------------------
@@ -221,35 +228,47 @@ fsPromises.stat(localFolder).then(folderStat => {
 
 console.debug("Creating the Submission and queue folders");
 
-let submissionFolderPath = path.join(localFolder, submissionFolderName);
-let queueFolderPath = path.join(localFolder, queueFolderName);
-fsPromises.stat(submissionFolderPath).then(async folderStat => {
+
+// -- "1. Submission" Folder
+fsPromises.stat(SUBMISSION_FOLDER_PATH).then(async folderStat => {
     if (false === folderStat.isDirectory()) {
-        let submissionFolderCreation = await fsPromises.mkdir(submissionFolderPath, {recursive: false, mode: 0o777});
-        submissionFolderPromise.resolve(submissionFolderCreation);
+        throw new Error(`Unable to create the Submission Folder "${SUBMISSION_FOLDER_PATH}" as it is a file or something else and invalid `)
     } else {
-        submissionFolderPromise.resolve(true); // Already exists
+        submissionFolderPromise.resolve(null); // Already exists
+    }
+}).catch(async err => {
+    try {
+        let submissionFolderCreation = await fsPromises.mkdir(SUBMISSION_FOLDER_PATH, {recursive: false, mode: 0o777});
+        console.log(`Submission folder created ${SUBMISSION_FOLDER_PATH}: `, submissionFolderCreation);
+        submissionFolderPromise.resolve(true); // Created it
+    } catch (exception) {
+        console.log("Error: ", exception);
+        throw new Error(`Unable to create the Submission Folder "${SUBMISSION_FOLDER_PATH}"`)
     }
 });
 
-fsPromises.stat(queueFolderPath).then(async folderStat => {
+// -- 2. Queue Folder
+fsPromises.stat(QUEUE_FOLDER_PATH).then(async folderStat => {
     if (false === folderStat.isDirectory()) {
-        try {
-
-            let queueFolderCreation = await fsPromises.mkdir(queueFolderPath, {recursive: false, mode: 0o777});
-        } catch (exception) {
-            throw new Error(`Unable to create the Queue Folder ${queueFolderPath}: `,)
-        }
-        queueFolderPromise.resolve(queueFolderCreation);
+        throw new Error(`Unable to create the Queue Folder "${QUEUE_FOLDER_PATH}" as it is a file or something else and invalid `,)
     } else {
-        queueFolderPromise.resolve(true); // Already exists
+        queueFolderPromise.resolve(null); // Already exists
+    }
+}).catch(async err => {
+    try {
+        let queueFolderCreation = await fsPromises.mkdir(QUEUE_FOLDER_PATH, {recursive: false, mode: 0o777});
+        console.log(`Queue folder created ${QUEUE_FOLDER_PATH}: `, queueFolderCreation);
+        queueFolderPromise.resolve(true);
+    } catch (exception) {
+        console.log("Error: ", exception);
+        throw new Error(`Unable to create the Queue Folder "${QUEUE_FOLDER_PATH}"`)
     }
 });
 
 
-fsPromises.stat(gtScriptPath).then(async fileStat => {
+fsPromises.stat(scriptPath).then(async fileStat => {
     if (false === fileStat.isFile()) {
-        canAccessScriptPromise.reject(`GT_SCRIPT_PATH is not a valid path, can't access it: "${gtScriptPath}"`);
+        canAccessScriptPromise.reject(`SCRIPT_PATH is not a valid path, can't access it: "${scriptPath}"`);
     } else {
         canAccessScriptPromise.resolve(true); // Exists, yay
     }
@@ -267,11 +286,21 @@ Promise.all([canAccessLocalFolderPromise, submissionFolderPromise, queueFolderPr
         startup: 'completing'
     }
     let isTrue = '✓ true';
-    console.log(`Can Access LocalFolder: ${isTrue}\n` +
-        `Processing folder exists: ${isTrue}`,
-        `Queue folder exists: ${isTrue}`,
-        `Script File exists: ${isTrue}`,
+    console.log(`-----------------------------\n  Startup Complete\n-----------------------------\n` +
+        `Can Access Folder "${localFolder}": ${isTrue}\n` +
+        `Submission folder "${SUBMISSION_FOLDER_PATH}": ${values[1] === true ? 'Created' : 'Already Existed'} ${isTrue}\n` +
+        `Queue folder "${QUEUE_FOLDER_PATH}": ${values[2] === true ? 'Created' : 'Already Existed'} ${isTrue}\n` +
+        `Script File "${scriptPath}" exists: ${isTrue}\n`
     );
+
+
+    directoryTreePlus = new DirectoryTreePlus(SUBMISSION_FOLDER_PATH, {
+        recurseFolder,
+        excludeFiles: localExclude,
+        extensions: process.env.FILE_EXTENSIONS, // e.g new RegExp('\\.(' + process.env.FILE_EXTENSIONS + ')$');
+        ignoreHiddenFiles: true, // Especially useful for checking folders that have Rsync files being received
+        dirTreeOptions
+    });
 
     startupCompletedPromise.resolve(values);
 
@@ -292,6 +321,7 @@ const occasionalQueueProcessingStatusUpdates = () => {
         return false;
     }
     return setInterval(() => {
+        updateProcessingFile();
         console.log('Update: ', {
             secondsSinceStarted: (new Date().getTime() - startTime) / 1000 + 's',
             status,
@@ -304,34 +334,49 @@ const occasionalQueueProcessingStatusUpdates = () => {
 }
 
 
-const checkForFileChanges = () => {
+const updateProcessingFile = () => {
 
+    // NB: Don't want to write to the file if we are still writing to it
+    // {
+    //     secondsSinceStarted: (new Date().getTime() - startTime) / 1000 + 's',
+    //         status,
+    //         stats: getStats(),
+    //     // queueManagerStats: JSON.stringify(queueManager.getStatistics(true), null, 2),
+    //     queueManagerStats: queueManager.getStatistics(true),
+    //     errors,
+    // }
+    const contents = `---- Async Processing ----\n` +
+        `Last Updated: ${new Date()}\n` +
+        `Seconds Since Started: ${(new Date().getTime() - startTime) / 1000}s\n` +
+        `Status: ${JSON.stringify(stats, null, 2)}\n` +
+        `---- Stats ----\n${JSON.stringify(getStats(), null, 2)}\n` +
+        `---- Queue Manager Stats ----\n${JSON.stringify(queueManager.getStatistics(true), null, 2)}\n`;
+    // console.log(`updateProcessingFile: Saving to ${QUEUE_PROCESSING_FILE} the contents:\n`, contents);
+    return fsPromises.writeFile(QUEUE_PROCESSING_FILE, contents); // As per https://nodejs.org/api/fs.html#fs_fs_writefile_file_data_options_callback
+}
+
+const checkForFileChanges = () => {
+    let fileChecksCompleted = stats.fileChecksCompleted;
+    fileChecksCompleted++;
     if (true === singleRun) {
         return false; // Don't keep checking for file changes
     }
-    let fileChecksCompleted = 0;
-    stats.fileChecksCompleted = fileChecksCompleted;
-    return setInterval(() => {
-        stats.fileCheckingRightNow = true;
-        let fileChanges = [];
-        if ('NEW' === fileChangedOrJustNew) {
-            fileChanges = directoryTreePlus.getFlattenedEntriesOfOnlyNewFiles();
 
-        } else {
-            // Check for changed AND new
-            fileChanges = directoryTreePlus.getFlattenedEntriesOfNewOrChangedFiles();
-        }
+    return setInterval(() => {
+
+        stats.fileCheckingRightNow = true;
+        let fileChanges = directoryTreePlus.getFlattenedEntriesOfOnlyNewFiles();
 
         let skippedAsNotYetUploaded = 0;
         _.forEach(fileChanges, (treeEntry, treeEntryIndex) => {
+
+
+            //treeEntry.path
+
             // We ignore file changes if the file is still in the queue and not yet being processed
             let fileHashTreeEntry = directoryTreePlus.filesHash[treeEntry.path] || null;
-
-            // @todo: CONFIRM LOGIC
-            // @todo: CONFIRM LOGIC
-            // @todo: CONFIRM LOGIC
-            if (fileHashTreeEntry === null || fileHashTreeEntry.uploaded || !fileHashTreeEntry.uploadPromise) {
-                // New file, or already previously uploaded, add it to the processing Queue
+            if (fileHashTreeEntry === null || fileHashTreeEntry.processed || !fileHashTreeEntry.processingPromise) {
+                // Adding it to the processing Queue
                 addFileToQueue(queueManager, treeEntry);
             } else {
                 console.log(`Ignoring change to file ${treeEntry.path} as it is in the queue but not yet uploaded`);
@@ -341,19 +386,53 @@ const checkForFileChanges = () => {
         fileChecksCompleted++;
         stats.fileChecksCompleted = fileChecksCompleted;
         if (fileChanges.length > 0) {
-            console.log(`File update check #${fileChecksCompleted} for the ${fileChanges.length} files which are new ` + ('NEW' === fileChangedOrJustNew ? '' : 'or changed') + ` and there was ${skippedAsNotYetUploaded} skipped as they are already in the queue and have not yet been uploaded`);
+            console.log(`File update check #${fileChecksCompleted} for the ${fileChanges.length} files`);
         } else {
-            console.log(`File update check #${fileChecksCompleted} - Nothing ` + ('NEW' === fileChangedOrJustNew ? 'new' : 'changed') + ' at ', new Date());
+            console.log(`File update check #${fileChecksCompleted} - Nothing new at `, new Date());
         }
-
+        updateProcessingFile();
         status.fileCheckingRightNow = false;
     }, fileChangePollingSeconds * 1000);
 }
 
 const addFileToQueue = async (queueManager, treeEntry) => {
-    treeEntry.uploadPromise = queueManager.addToQueue(treeEntry);
+
+
+    let queuePromise = new DeferredPromise();
+    // @todo: MOVE TO THE QUEUE FOLDER!
+    console.log("Tree Entry: ", treeEntry);
+    /* Example treeEntry = {
+      path: 'C:/Temp/Gather Together Processing/1. Submission/2019-05-16Th Oasis One Flight #2 - 11 Static Of Sunset And --11.mp4',
+      name: '2019-05-16Th Oasis One Flight #2 - 11 Static Of Sunset And --11.mp4',
+      size: 1057358,
+      extension: '.mp4',
+      type: 'file',
+      mode: 33206,
+      mtime: 2019-07-30T15:33:29.000Z,
+      mtimeMs: 1564500809000,
+      basePath: 'C:/Temp/Gather Together Processing/1. Submission'
+    }
+     */
+    if (!treeEntry || treeEntry.type !== 'file' || treeEntry.size < 1) {
+        console.log("Ignoring invalid tree entry: ", treeEntry);
+    }
+    let fileQueueFolderPath = path.join(QUEUE_FOLDER_PATH, treeEntry.name);
+
+    fsPromises.rename(treeEntry.path, fileQueueFolderPath).then(completed => {
+        treeEntry.path = fileQueueFolderPath;
+        // @todo: Add to the queue manager
+        treeEntry.processingPromise = queueManager.addToQueue(treeEntry);
+        queuePromise.resolve(true);
+    }).catch(error => {
+        console.error(`Unable to move the file ${treeEntry.path} to ${fileQueueFolderPath}\n`, error);
+        queuePromise.reject(error);
+    });
+
+
+    return queuePromise;
+
     stats.filesQueued++;
-    treeEntry.uploadPromise.then(processingResponse => {
+    treeEntry.processingPromise.then(processingResponse => {
         if (_.get(processingResponse, 'queueEntry.path')) {
             // Merge in the processing Response, assuming it didn't completely error
             directoryTreePlus.addTreeEntryToHash(processingResponse, directoryTreePlus.MERGE_TYPE_MERGE);
@@ -461,13 +540,13 @@ const addUploadFilesToQueue = async (queueManager, flattenedTree) => {
 // =============================================
 startupCompletedPromise.then((values) => {
     status = {startup: 'Completed'};
-    console.debug("--------------------------\n  Startup Completed\n--------------------------\n", values);
-    console.debug(localFolder);
+    // console.debug("--------------------------\n  Startup Completed\n--------------------------\n", values);
+    // console.debug(localFolder);
     let flattenedTree = directoryTreePlus.getFlattenedTreeEntries(); // Initially get all the files
     // let flattenedTree = filterOutRecursiveDirectoriesIfNeeded(dirTree(localFolder, dirTreeOptions));
-    console.debug("Checking files:");
+    // console.debug("Checking files:");
     // console.debug("The flattenedTree is: ", flattenedTree);
-    console.log("\nExisting Files: \n", directoryTreePlus.treeOutput(flattenedTree));
+    // console.log("\nExisting Files: \n", directoryTreePlus.treeOutput(flattenedTree));
     // e.g: The flattenedTree is:  {
     //   path: 'C:/Images/2020-12-31st New Years Eve',
     //   name: '2020-12-31st New Years Eve',
@@ -498,8 +577,8 @@ startupCompletedPromise.then((values) => {
     // }
 
 
-    if (!actuallyUpload) {
-        console.log("Not uploading any files as ACTUALLY_UPLOAD is set to false");
+    if (!actuallyRun) {
+        console.log("Not actually processing any files");
         return null;
     }
     return flattenedTree;
@@ -508,7 +587,7 @@ startupCompletedPromise.then((values) => {
     queueManager.start(); // Start processing as soon as we add entries to the queue
     if (!filteredTree || _.get(filteredTree, 'path')) {
         // Ignoring empty tree or ACTUALLY_UPLOAD is set to false
-        status.queue = `Nothing in 1st Queue run ( ACTUALLY_UPLOAD is ${JSON.stringify(actuallyUpload)} )`;
+        status.queue = `Nothing in 1st Queue run ( ACTUALLY_RUN is ${JSON.stringify(actuallyRun)} )`;
         console.log("Invalid empty or disabled filteredTree, nothing to upload", filteredTree);
         return null;
     }
@@ -536,6 +615,7 @@ startupCompletedPromise.then((values) => {
     status.queue = '1st queue run processing';
     await queueManager.drained();
     status.queue = '1st queue run processed';
+    updateProcessingFile();
     // console.debug("Completed initial uploading: ", uploadedFiles);
     console.log("Completed the initial processing in : " + (new Date().getTime() - startTime) / 1000 + `s\nStats: `, getStats());
     return uploadedFiles;

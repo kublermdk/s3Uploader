@@ -1,14 +1,14 @@
 {
-  "name": "s3uploader",
-  "version": "1.0.0",
+  "name": "Async Queue",
+  "version": "0.5.2",
   "description": "",
-  "main": "s3uploader.js",
+  "main": "asyncQueue.js",
   "bin": {
-    "s3uploader": "s3uploader.js"
+    "run": "asyncQueue.js"
   },
   "scripts": {
-    "start": "node s3uploader.js",
-    "build": "pkg s3uploader.js --out-path=dist",
+    "start": "node asyncQueue.js",
+    "build": "pkg asyncQueue.js --out-path=dist",
     "test": "jest",
     "test-watch": "jest --watchAll --notify"
   },
