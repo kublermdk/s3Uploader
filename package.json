@@ -1,0 +1,34 @@
+{
+  "name": "s3uploader",
+  "version": "1.0.0",
+  "description": "",
+  "main": "s3uploader.js",
+  "bin": {
+    "s3uploader": "s3uploader.js"
+  },
+  "scripts": {
+    "start": "node s3uploader.js",
+    "build": "pkg s3uploader.js --out-path=dist",
+    "test": "jest",
+    "test-watch": "jest --watchAll --notify"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "async": "^3.2.0",
+    "aws-sdk": "^2.829.0",
+    "directory-tree": "^2.2.5",
+    "dotenv": "^8.2.0",
+    "express": "^4.17.1",
+    "express-basic-auth": "^1.2.0",
+    "lodash": "^4.17.20",
+    "morgan": "^1.10.0",
+    "path": "^0.12.7",
+    "promise-deferred": "^2.0.3",
+    "sha256-file": "^1.0.0"
+  },
+  "devDependencies": {
+    "jest": "^26.6.3"
+  }
+}
