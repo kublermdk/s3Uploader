@@ -29,7 +29,7 @@ class QueueConsumerGTLocal extends QueueConsumerBase {
 
     // The default configuration is added to the config in the constructor
     defaultConfig = {
-        FILEPATH_CLI_ARG: '--filepath=', // Added before the filename, you could have it with a space without anything, whatever is needed. e.g '/usr/kublermdk/gt/script/cli.js --filepath="/usr/kublermdk/gt/2. Queue/2021-08-23rd-video of some cool stuff.mp4"'
+        FILEPATH_CLI_ARG: '--file=', // Added before the filename, you could have it with a space without anything, whatever is needed. e.g '/usr/kublermdk/gt/script/cli.js --filepath="/usr/kublermdk/gt/2. Queue/2021-08-23rd-video of some cool stuff.mp4"'
         // scriptPath: e.g "/usr/home/kublermdk/gt/bin/cli" Expecting this to be in the config and to point to what we want to trigger
         child_process_options: {
             encoding: 'utf8',
@@ -67,7 +67,7 @@ class QueueConsumerGTLocal extends QueueConsumerBase {
                 // let localFilePath = path.join(treeEntry.path); // Convert to a local filepath that fs can read
                 let localFilePath = treeEntry.path;
 
-                let processingExecCommand = `${this.config.scriptPath} "${localFilePath}"`
+                let processingExecCommand = `${this.config.scriptPath} ${this.config.FILEPATH_CLI_ARG}"${localFilePath}"`
                 console.log("About to run with: ", processingExecCommand, 'and the cli options: ', cliOptions);
 
                 let processingStartTime = new Date();
@@ -95,9 +95,10 @@ class QueueConsumerGTLocal extends QueueConsumerBase {
                         stderr
                     });
                 }).catch(err => {
-                    this.addError(err, `Error trying to process ${treeEntry.path}`);
+                    this.addError(err, `Error trying to process file: "${treeEntry.path}"\n`);
                     // console.error("Error whilst processing: ", treeEntry, "\nError: ", err);
-                    reject(err);
+                    resolve({processed: false, err});
+                    // reject(err);
                 });
             }
         );
