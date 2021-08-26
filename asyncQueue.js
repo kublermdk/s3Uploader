@@ -160,7 +160,9 @@ let selfFiles = [__filename, '.env', 'QueueConsumer.js'];
 
 
 let gtFileConsumerConfig = {
-    scriptPath: scriptPathPre + scriptPath + scriptPathPost,
+    scriptCall: scriptPathPre + scriptPath + scriptPathPost,
+    scriptPath, // The actual location
+    workingDirectory: path.dirname(path.dirname(scriptPath)), // @todo: Allow setting the working directory separately or the number of directories to reduce
 };
 
 // --------------------------------

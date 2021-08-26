@@ -63,11 +63,12 @@ class QueueConsumerGTLocal extends QueueConsumerBase {
         return new Promise((resolve, reject) => {
                 let processingTimeStarted = new Date();
                 let cliOptions = this.config.child_process_options;
+                cliOptions.cwd = this.config.workingDirectory;
                 // const basePath = treeEntry.basePath;
                 // let localFilePath = path.join(treeEntry.path); // Convert to a local filepath that fs can read
                 let localFilePath = treeEntry.path;
 
-                let processingExecCommand = `${this.config.scriptPath} ${this.config.FILEPATH_CLI_ARG}"${localFilePath}"`
+                let processingExecCommand = `${this.config.scriptCall} ${this.config.FILEPATH_CLI_ARG}"${localFilePath}"`
                 console.log("About to run with: ", processingExecCommand, 'and the cli options: ', cliOptions);
 
                 let processingStartTime = new Date();
